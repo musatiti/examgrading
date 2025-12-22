@@ -5,6 +5,8 @@ COPY . .
 
 RUN pip install flask
 RUN pip install streamlit
+RUN pip install openai
+RUN pip install pypdf
 
 EXPOSE 8080
 CMD ["python", "app.py"]
