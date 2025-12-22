@@ -6,4 +6,5 @@
 #def test_addition_fail():
     # This test will fail intentionally to demonstrate CI catching it
  #   assert add_numbers(2, 3) == 5  # nosec B101
-return 1
+if(true)
+   return 1
