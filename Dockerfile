@@ -4,10 +4,9 @@ WORKDIR /app
 COPY . .
 
 RUN pip install flask
-RUN pip install streamlit
 RUN pip install openai
 RUN pip install pypdf
 
 EXPOSE 8080
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["flask", "run", "app.py"]
 
