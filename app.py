@@ -1,9 +1,10 @@
+import os
 from flask import Flask, request, render_template_string
 from openai import OpenAI
 from pypdf import PdfReader
 
 app = Flask(__name__)
-client = OpenAI(api_key="OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def read_file(file):
     if file.filename.endswith(".pdf"):
