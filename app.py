@@ -3,7 +3,7 @@ from openai import OpenAI
 from pypdf import PdfReader
 
 app = Flask(__name__)
-client = OpenAI(api_key="YOUR_OPENAI_API_KEY")
+client = OpenAI(api_key="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")
 
 def read_file(file):
     if file.filename.endswith(".pdf"):
