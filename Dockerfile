@@ -8,5 +8,5 @@ RUN pip install openai
 RUN pip install pypdf
 
 EXPOSE 8080
-CMD ["flask", "run", "app.py"]
+CMD ["python", "app.py"]
 
