@@ -1,39 +1,74 @@
-import streamlit as st
+from flask import Flask, request, render_template_string
 from openai import OpenAI
 from pypdf import PdfReader
 
-# Setup OpenAI client
+app = Flask(__name__)
 client = OpenAI(api_key="YOUR_OPENAI_API_KEY")
 
-st.title("📚 AI Exam Grader")
+def read_file(file):
+    if file.filename.endswith(".pdf"):
+        reader = PdfReader(file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() + "\n"
+        return text
+    return file.read().decode("utf-8")
 
-# 1. File Uploaders
-student_file = st.file_uploader("Upload Student Paper", type=["pdf", "txt"])
-key_file = st.file_uploader("Upload Answer Key", type=["pdf", "txt"])
+HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Exam Grader</title>
+</head>
+<body>
+    <h1>AI Exam Grader</h1>
+    <form method="POST" enctype="multipart/form-data">
+        <label>Student Exam:</label><br>
+        <input type="file" name="student"><br><br>
 
-def extract_text(uploaded_file):
-    if uploaded_file.type == "application/pdf":
-        reader = PdfReader(uploaded_file)
-        return "\n".join([page.extract_text() for page in reader.pages])
-    return str(uploaded_file.read())
+        <label>Answer Key:</label><br>
+        <input type="file" name="key"><br><br>
 
-if st.button("Grade Paper"):
-    if student_file and key_file:
-        with st.spinner("Analyzing..."):
-            student_text = extract_text(student_file)
-            key_text = extract_text(key_file)
-            
-            # 2. Call OpenAI API
+        <button type="submit">Grade with AI</button>
+    </form>
+
+    {% if result %}
+        <h2>Grade & Feedback</h2>
+        <pre>{{ result }}</pre>
+    {% endif %}
+</body>
+</html>
+"""
+
+@app.route("/", methods=["GET", "POST"])
+def index():
+    result = None
+
+    if request.method == "POST":
+        student_file = request.files.get("student")
+        key_file = request.files.get("key")
+
+        if student_file and key_file:
+            student_text = read_file(student_file)
+            key_text = read_file(key_file)
+
             response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": "Grade the student's work based strictly on the key sheet provided."},
-                    {"role": "user", "content": f"KEY SHEET:\n{key_text}\n\nSTUDENT PAPER:\n{student_text}"}
+                    {
+                        "role": "system",
+                        "content": "You are an exam grader. Grade strictly based on the provided answer key."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"ANSWER KEY:\n{key_text}\n\nSTUDENT EXAM:\n{student_text}"
+                    }
                 ]
             )
-            
-            # 3. Show Result
-            st.subheader("Final Grade & Feedback")
-            st.write(response.choices[0].message.content)
-    else:
-        st.error("Please upload both files first!")
+
+            result = response.choices[0].message.content
+
+    return render_template_string(HTML, result=result)
+
+if __name__ == "__main__":
+    app.run(debug=True)
