@@ -4,16 +4,18 @@ from openai import OpenAI
 from pypdf import PdfReader
 
 app = Flask(__name__)
+
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def read_file(file):
     if file.filename.endswith(".pdf"):
-        reader = PdfReader(file)
+        reader = PdfReader(file.stream)
         text = ""
         for page in reader.pages:
             text += page.extract_text() + "\n"
         return text
-    return file.read().decode("utf-8")
+    else:
+        return file.read().decode("utf-8")
 
 HTML = """
 <!DOCTYPE html>
@@ -25,10 +27,10 @@ HTML = """
     <h1>AI Exam Grader</h1>
     <form method="POST" enctype="multipart/form-data">
         <label>Student Exam:</label><br>
-        <input type="file" name="student"><br><br>
+        <input type="file" name="student" required><br><br>
 
         <label>Answer Key:</label><br>
-        <input type="file" name="key"><br><br>
+        <input type="file" name="key" required><br><br>
 
         <button type="submit">Grade with AI</button>
     </form>
