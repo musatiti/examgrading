@@ -5,6 +5,7 @@ COPY . .
 
 RUN pip install flask
 RUN pip install google-generativeai
+RUN pip install tesseract-ocr
 RUN pip install pypdf
 
 EXPOSE 8080

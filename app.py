@@ -1,27 +1,31 @@
 import os
 from flask import Flask, request, render_template_string
-from pypdf import PdfReader
 import google.generativeai as genai
+import pytesseract
+from pdf2image import convert_from_bytes
 
-# Configure Gemini
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+genai.configure(api_key=os.getenv("gemini_key"))
+
 models = list(genai.list_models())
+model_name = None
 for m in models:
     if "generateContent" in getattr(m, "supported_generation_methods", []):
-        print(f"{m.name}")
+        model_name = m.name
+        break
+
+if not model_name:
+    raise RuntimeError("No model available")
+
+model = genai.GenerativeModel(model_name)
 
 app = Flask(__name__)
 
-def read_file(file):
-    if file and file.filename.lower().endswith(".pdf"):
-        reader = PdfReader(file.stream)
-        text = []
-        for page in reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text.append(page_text)
-        return "\n".join(text) or "EMPTY PDF"
-    return file.read().decode("utf-8", errors="ignore")
+def pdf_to_text(file):
+    pages = convert_from_bytes(file.read())
+    text = ""
+    for page in pages:
+        text += pytesseract.image_to_string(page)
+    return text or "EMPTY PDF"
 
 HTML = """
 <!DOCTYPE html>
@@ -34,13 +38,10 @@ HTML = """
     <form method="POST" enctype="multipart/form-data">
         <label>Student Exam:</label><br>
         <input type="file" name="student" required><br><br>
-
         <label>Answer Key:</label><br>
         <input type="file" name="key" required><br><br>
-
         <button type="submit">Grade with AI</button>
     </form>
-
     {% if result %}
         <h2>Grade & Feedback</h2>
         <pre>{{ result }}</pre>
@@ -52,16 +53,13 @@ HTML = """
 @app.route("/", methods=["GET", "POST"])
 def index():
     result = None
-
     if request.method == "POST":
         try:
             student_file = request.files.get("student")
             key_file = request.files.get("key")
-
-            student_text = read_file(student_file)
-            key_text = read_file(key_file)
-
-            response = model.generate_content(f"""
+            student_text = pdf_to_text(student_file)
+            key_text = pdf_to_text(key_file)
+            prompt = f"""
 You are an exam grader.
 Grade strictly based on the provided answer key.
 
@@ -70,13 +68,11 @@ ANSWER KEY:
 
 STUDENT EXAM:
 {student_text}
-""")
-
-            result = response.text
-
+"""
+            response = model.generate_content(prompt)
+            result = getattr(response, "text", str(response))
         except Exception as e:
             result = f"AI Error: {e}"
-
     return render_template_string(HTML, result=result)
 
 if __name__ == "__main__":
