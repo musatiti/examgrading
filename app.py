@@ -1,23 +1,11 @@
+import os
 from flask import Flask, request, render_template_string
 import google.generativeai as genai
 import pytesseract
 from pdf2image import convert_from_bytes
 
-
-genai.configure(api_key="GEMINI_API_KEY")
-
-
-models = list(genai.list_models())
-model_name = None
-for m in models:
-    if "generateContent" in getattr(m, "supported_generation_methods", []):
-        model_name = m.name
-        break
-
-if not model_name:
-    raise RuntimeError("No Gemini model available for generate_content")
-
-model = genai.GenerativeModel(model_name)
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 app = Flask(__name__)
 
@@ -56,10 +44,8 @@ def index():
     result = None
     if request.method == "POST":
         try:
-            student_file = request.files.get("student")
-            key_file = request.files.get("key")
-            student_text = pdf_to_text(student_file)
-            key_text = pdf_to_text(key_file)
+            student_text = pdf_to_text(request.files["student"])
+            key_text = pdf_to_text(request.files["key"])
 
             prompt = f"""
 You are an exam grader.
@@ -72,7 +58,7 @@ STUDENT EXAM:
 {student_text}
 """
             response = model.generate_content(prompt)
-            result = getattr(response, "text", str(response))
+            result = response.text
         except Exception as e:
             result = f"AI Error: {e}"
 
