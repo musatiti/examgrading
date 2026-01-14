@@ -3,10 +3,18 @@ FROM python:3.10-slim
 WORKDIR /app
 COPY . .
 
+RUN apt-get update && apt-get install -y \
+    tesseract-ocr \
+    libtesseract-dev \
+    poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install flask
 RUN pip install google-generativeai
 RUN pip install tesseract-ocr
 RUN pip install pypdf
+RUN pip install pdf2image
+RUN pip install pytesseract
 
-EXPOSE 8080
+EXPOSE 5000
 CMD ["python", "app.py"]
