@@ -3,16 +3,20 @@ from flask import Flask, request, render_template_string
 from openai import OpenAI
 from pypdf import PdfReader
 
-app = Flask(__name__)
+# TEMP: ensure key exists
+os.environ["OPENAI_API_KEY"] = "YOUR_API_KEY_HERE"
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+app = Flask(__name__)
+client = OpenAI()
 
 def read_file(file):
     if file.filename.endswith(".pdf"):
         reader = PdfReader(file.stream)
         text = ""
         for page in reader.pages:
-            text += page.extract_text() + "\n"
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
         return text
     else:
         return file.read().decode("utf-8")
@@ -51,25 +55,24 @@ def index():
         student_file = request.files.get("student")
         key_file = request.files.get("key")
 
-        if student_file and key_file:
-            student_text = read_file(student_file)
-            key_text = read_file(key_file)
+        student_text = read_file(student_file)
+        key_text = read_file(key_file)
 
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an exam grader. Grade strictly based on the provided answer key."
-                    },
-                    {
-                        "role": "user",
-                        "content": f"ANSWER KEY:\n{key_text}\n\nSTUDENT EXAM:\n{student_text}"
-                    }
-                ]
-            )
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            input=f"""
+You are an exam grader.
+Grade strictly using the answer key.
 
-            result = response.choices[0].message.content
+ANSWER KEY:
+{key_text}
+
+STUDENT EXAM:
+{student_text}
+"""
+        )
+
+        result = response.output_text
 
     return render_template_string(HTML, result=result)
 
