@@ -5,7 +5,10 @@ import google.generativeai as genai
 
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("text-bison-001")
+models = list(genai.list_models())
+for m in models:
+    if "generateContent" in getattr(m, "supported_generation_methods", []):
+        print(f"{m.name}")
 
 app = Flask(__name__)
 
