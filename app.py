@@ -1,25 +1,24 @@
 import os
 from flask import Flask, request, render_template_string
-from openai import OpenAI
 from pypdf import PdfReader
+import google.generativeai as genai
 
-# TEMP: ensure key exists
-os.environ["OPENAI_API_KEY"] = "YOUR_API_KEY_HERE"
+# Configure Gemini
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 app = Flask(__name__)
-client = OpenAI()
 
 def read_file(file):
-    if file.filename.endswith(".pdf"):
+    if file and file.filename.lower().endswith(".pdf"):
         reader = PdfReader(file.stream)
-        text = ""
+        text = []
         for page in reader.pages:
             page_text = page.extract_text()
             if page_text:
-                text += page_text + "\n"
-        return text
-    else:
-        return file.read().decode("utf-8")
+                text.append(page_text)
+        return "\n".join(text) or "EMPTY PDF"
+    return file.read().decode("utf-8", errors="ignore")
 
 HTML = """
 <!DOCTYPE html>
@@ -52,27 +51,28 @@ def index():
     result = None
 
     if request.method == "POST":
-        student_file = request.files.get("student")
-        key_file = request.files.get("key")
+        try:
+            student_file = request.files.get("student")
+            key_file = request.files.get("key")
 
-        student_text = read_file(student_file)
-        key_text = read_file(key_file)
+            student_text = read_file(student_file)
+            key_text = read_file(key_file)
 
-        response = client.responses.create(
-            model="gpt-4.1-mini",
-            input=f"""
+            response = model.generate_content(f"""
 You are an exam grader.
-Grade strictly using the answer key.
+Grade strictly based on the provided answer key.
 
 ANSWER KEY:
 {key_text}
 
 STUDENT EXAM:
 {student_text}
-"""
-        )
+""")
 
-        result = response.output_text
+            result = response.text
+
+        except Exception as e:
+            result = f"AI Error: {e}"
 
     return render_template_string(HTML, result=result)
 
