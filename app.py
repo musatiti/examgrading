@@ -1,10 +1,11 @@
-import os
 from flask import Flask, request, render_template_string
 import google.generativeai as genai
 import pytesseract
 from pdf2image import convert_from_bytes
 
-genai.configure(api_key=os.getenv("gemini_key"))
+
+genai.configure(api_key="AIzaSyDY8AoqoEx5HN62Nz67MRodL3V9BNsDsno")
+
 
 models = list(genai.list_models())
 model_name = None
@@ -14,7 +15,7 @@ for m in models:
         break
 
 if not model_name:
-    raise RuntimeError("No model available")
+    raise RuntimeError("No Gemini model available for generate_content")
 
 model = genai.GenerativeModel(model_name)
 
@@ -59,6 +60,7 @@ def index():
             key_file = request.files.get("key")
             student_text = pdf_to_text(student_file)
             key_text = pdf_to_text(key_file)
+
             prompt = f"""
 You are an exam grader.
 Grade strictly based on the provided answer key.
@@ -73,6 +75,7 @@ STUDENT EXAM:
             result = getattr(response, "text", str(response))
         except Exception as e:
             result = f"AI Error: {e}"
+
     return render_template_string(HTML, result=result)
 
 if __name__ == "__main__":
