@@ -49,7 +49,10 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/gp:latest .
+          docker build \
+          --build-arg GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} \
+          -t ${{ secrets.DOCKERHUB_USERNAME }}/gp:latest .
+
 
       - name: Push image to Docker Hub
         run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/gp:latest

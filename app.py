@@ -4,7 +4,7 @@ import pytesseract
 from pdf2image import convert_from_bytes
 
 
-genai.configure(api_key="AIzaSyDY8AoqoEx5HN62Nz67MRodL3V9BNsDsno")
+genai.configure(api_key="GEMINI_API_KEY")
 
 
 models = list(genai.list_models())
