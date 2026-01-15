@@ -4,9 +4,8 @@ import google.generativeai as genai
 import pytesseract
 from pdf2image import convert_from_bytes
 
-
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("models/gemini-1.0-pro")
+model = genai.TextModel("text-bison-001")  # safe, works with generate_text
 
 app = Flask(__name__)
 
@@ -58,7 +57,7 @@ ANSWER KEY:
 STUDENT EXAM:
 {student_text}
 """
-            response = model.generate_content(prompt)
+            response = model.generate_text(prompt)  # changed
             result = response.text
         except Exception as e:
             result = f"AI Error: {e}"
