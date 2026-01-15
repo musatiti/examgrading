@@ -12,7 +12,11 @@ RUN apt-get update && apt-get install -y \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install flask requests pdf2image pillow
+RUN pip install --no-cache-dir \
+    flask \
+    google-generativeai \
+    pdf2image \
+    pytesseract
 
 
 EXPOSE 5000
