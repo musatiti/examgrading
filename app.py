@@ -5,7 +5,7 @@ import pytesseract
 from pdf2image import convert_from_bytes
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.TextModel("text-bison-001")  # safe, works with generate_text
+model = genai.get_model("text-bison-001")
 
 app = Flask(__name__)
 
@@ -57,7 +57,7 @@ ANSWER KEY:
 STUDENT EXAM:
 {student_text}
 """
-            response = model.generate_text(prompt)  # changed
+            response = model.generate_text(prompt)  
             result = response.text
         except Exception as e:
             result = f"AI Error: {e}"
