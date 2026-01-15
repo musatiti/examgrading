@@ -1,102 +1,127 @@
-from flask import Flask, request, render_template_string
-from pdf2image import convert_from_bytes
-import pytesseract
 import re
 from difflib import SequenceMatcher
+from io import BytesIO
+
+from flask import Flask, request, render_template_string
+from pdf2image import convert_from_bytes
+from PIL import Image
+
+import torch
+from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 
 app = Flask(__name__)
 
-def pdf_to_text(file):
-    pages = convert_from_bytes(file.read())
-    text = ""
-    for page in pages:
-        text += pytesseract.image_to_string(page) + "\n"
-    return text.strip() or "NO TEXT DETECTED"
+# Handwritten TrOCR model (AI OCR)
+# Model exists on Hugging Face and is designed for handwritten text. :contentReference[oaicite:1]{index=1}
+PROCESSOR = TrOCRProcessor.from_pretrained("microsoft/trocr-small-handwritten")
+MODEL = VisionEncoderDecoderModel.from_pretrained("microsoft/trocr-small-handwritten")
+MODEL.eval()
 
-def similarity(a, b):
-    return SequenceMatcher(None, a, b).ratio()
-
-def grade_exam(key_text, student_text):
-    key_lines = [line.strip() for line in key_text.split("\n") if line.strip()]
-    student_lines = [line.strip() for line in student_text.split("\n") if line.strip()]
-
-    total_questions = min(len(key_lines), len(student_lines))
-    if total_questions == 0:
-        return "Could not detect answers. OCR failed."
-
-    correct = 0
-    report = []
-
-    for i in range(total_questions):
-        key_ans = key_lines[i]
-        student_ans = student_lines[i]
-
-        score = similarity(key_ans.lower(), student_ans.lower())
-        status = "✅ Correct" if score >= 0.75 else "❌ Wrong"
-
-        if score >= 0.75:
-            correct += 1
-
-        report.append(
-            f"Q{i+1}:\n"
-            f"Key: {key_ans}\n"
-            f"Student: {student_ans}\n"
-            f"Match: {score*100:.1f}% → {status}\n"
-        )
-
-    final_score = f"Final Score: {correct}/{total_questions}\n\n"
-    feedback = "Feedback:\n"
-    if correct == total_questions:
-        feedback += "- Excellent work ✅\n"
-    elif correct >= total_questions * 0.7:
-        feedback += "- Good work, revise mistakes ⚠️\n"
-    else:
-        feedback += "- Needs improvement, study the key answers more ❗\n"
-
-    return final_score + "\n".join(report) + "\n" + feedback
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+MODEL.to(DEVICE)
 
 HTML = """
 <!DOCTYPE html>
 <html>
-<head><title>Exam Grader</title></head>
+<head><title>AI Exam Grader</title></head>
 <body>
-    <h1>Offline Exam Grader (No API)</h1>
+  <h1>AI Exam Grader (Local AI - TrOCR)</h1>
+  <form method="POST" enctype="multipart/form-data">
+    <label>Student Exam (PDF):</label><br>
+    <input type="file" name="student" required><br><br>
 
-    <form method="POST" enctype="multipart/form-data">
-        <label>Student Exam (PDF):</label><br>
-        <input type="file" name="student" required><br><br>
+    <label>Answer Key (PDF):</label><br>
+    <input type="file" name="key" required><br><br>
 
-        <label>Answer Key (PDF):</label><br>
-        <input type="file" name="key" required><br><br>
+    <button type="submit">Grade</button>
+  </form>
 
-        <button type="submit">Grade</button>
-    </form>
-
-    {% if result %}
-        <h2>Results</h2>
-        <pre>{{ result }}</pre>
-    {% endif %}
+  {% if result %}
+    <h2>Grade & Feedback</h2>
+    <pre>{{ result }}</pre>
+  {% endif %}
 </body>
 </html>
 """
 
+def ocr_image_trocr(pil_img: Image.Image) -> str:
+    pil_img = pil_img.convert("RGB")
+    inputs = PROCESSOR(images=pil_img, return_tensors="pt")
+    pixel_values = inputs.pixel_values.to(DEVICE)
+
+    with torch.no_grad():
+        generated_ids = MODEL.generate(pixel_values, max_new_tokens=128)
+
+    text = PROCESSOR.batch_decode(generated_ids, skip_special_tokens=True)[0]
+    return text.strip()
+
+def pdf_to_text_trocr(file_storage, max_pages=3) -> str:
+    pages = convert_from_bytes(file_storage.read())
+    out = []
+    for page in pages[:max_pages]:
+        out.append(ocr_image_trocr(page))
+    return "\n".join([x for x in out if x]) or "NO TEXT DETECTED"
+
+def normalize_lines(text: str):
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    return lines
+
+def sim(a: str, b: str) -> float:
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+def grade_by_lines(key_text: str, student_text: str):
+    key_lines = normalize_lines(key_text)
+    stu_lines = normalize_lines(student_text)
+
+    n = min(len(key_lines), len(stu_lines))
+    if n == 0:
+        return "Could not extract readable answers (handwriting OCR failed). Try clearer scans."
+
+    correct = 0
+    details = []
+
+    for i in range(n):
+        k = key_lines[i]
+        s = stu_lines[i]
+        score = sim(k, s)
+
+        ok = score >= 0.75
+        if ok:
+            correct += 1
+
+        details.append(
+            f"Q{i+1} | match {score*100:.1f}% | {'Correct' if ok else 'Wrong'}\n"
+            f"Key: {k}\n"
+            f"Student: {s}\n"
+        )
+
+    total = f"Total: {correct}/{n}\n"
+    feedback = (
+        "Feedback:\n"
+        "- OCR is AI-based and may misread handwriting; clearer scans improve accuracy.\n"
+        "- If many mismatches are close, handwriting recognition likely introduced errors.\n"
+    )
+    return total + "\n".join(details) + "\n" + feedback
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     result = None
+
     if request.method == "POST":
         try:
             student_file = request.files["student"]
             key_file = request.files["key"]
 
-            student_text = pdf_to_text(student_file)
-            key_text = pdf_to_text(key_file)
+            key_text = pdf_to_text_trocr(key_file, max_pages=3)
+            student_text = pdf_to_text_trocr(student_file, max_pages=3)
 
-            result = grade_exam(key_text, student_text)
+            result = grade_by_lines(key_text, student_text)
 
         except Exception as e:
-            result = f"Error: {e}"
+            result = f"ERROR: {e}"
 
     return render_template_string(HTML, result=result)
+
 
 
 if __name__ == "__main__":
