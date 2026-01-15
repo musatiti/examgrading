@@ -1,3 +1,4 @@
+# app.py
 import os
 from io import BytesIO
 
@@ -6,7 +7,7 @@ from pdf2image import convert_from_bytes
 from google import genai
 from google.genai import types
 
-if "GEMINI_API_KEY" not in os.environ:
+if "GEMINI_API_KEY" not in os.environ or not os.environ["GEMINI_API_KEY"].strip():
     raise RuntimeError("GEMINI_API_KEY not set")
 
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
@@ -15,7 +16,8 @@ MODEL_NAME = "gemini-2.0-flash"
 app = Flask(__name__)
 
 def pdf_to_png_bytes_list(file_storage, max_pages=3):
-    pages = convert_from_bytes(file_storage.read())
+    data = file_storage.read()
+    pages = convert_from_bytes(data)
     out = []
     for page in pages[:max_pages]:
         bio = BytesIO()
@@ -28,15 +30,15 @@ HTML = """
 <html>
 <head><title>AI Exam Grader</title></head>
 <body>
-  <h1>AI Exam Grader</h1>
+  <h1>AI Exam Grader (Handwritten)</h1>
   <form method="POST" enctype="multipart/form-data">
-    <label>Student Exam (handwritten PDF):</label><br>
+    <label>Student Exam (PDF):</label><br>
     <input type="file" name="student" required><br><br>
 
-    <label>Answer Key (handwritten PDF):</label><br>
+    <label>Answer Key (PDF):</label><br>
     <input type="file" name="key" required><br><br>
 
-    <button type="submit">Grade with AI</button>
+    <button type="submit">Grade</button>
   </form>
 
   {% if result %}
@@ -59,26 +61,24 @@ def index():
             key_imgs = pdf_to_png_bytes_list(key_file, max_pages=3)
             student_imgs = pdf_to_png_bytes_list(student_file, max_pages=3)
 
-            parts = [
-                types.Part.from_text(
-                    "You are an exam grader. The files are handwritten.\n"
-                    "First images are the ANSWER KEY, then the STUDENT EXAM.\n"
-                    "Compare answers question-by-question.\n"
-                    "Return:\n"
-                    "- Total score (e.g., 17/20)\n"
-                    "- Per-question correctness\n"
-                    "- Mistakes\n"
-                    "- Brief feedback\n"
-                )
+            contents = [
+                "You are an exam grader. The exam and key are handwritten.\n"
+                "The first images are the ANSWER KEY, then the STUDENT EXAM.\n"
+                "Compare answers question-by-question.\n"
+                "Return ONLY:\n"
+                "1) Total score (e.g., 17/20)\n"
+                "2) Per-question results (Correct/Wrong)\n"
+                "3) Mistakes\n"
+                "4) Brief feedback\n"
             ]
 
             for b in key_imgs:
-                parts.append(types.Part.from_bytes(data=b, mime_type="image/png"))
+                contents.append(types.Part.from_bytes(data=b, mime_type="image/png"))
 
             for b in student_imgs:
-                parts.append(types.Part.from_bytes(data=b, mime_type="image/png"))
+                contents.append(types.Part.from_bytes(data=b, mime_type="image/png"))
 
-            resp = client.models.generate_content(model=MODEL_NAME, contents=parts)
+            resp = client.models.generate_content(model=MODEL_NAME, contents=contents)
             result = resp.text
 
         except Exception as e:
