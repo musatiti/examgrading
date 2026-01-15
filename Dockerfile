@@ -13,10 +13,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install flask
-RUN pip install --upgrade google-generativeai
 RUN pip install pypdf
 RUN pip install pdf2image
-RUN pip install pytesseract
+RUN pip install pillow
 
 EXPOSE 5000
 CMD ["python", "app.py"]
