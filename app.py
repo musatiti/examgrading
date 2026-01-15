@@ -3,8 +3,7 @@ from pdf2image import convert_from_bytes
 from PIL import Image
 import numpy as np
 import cv2
-import torch
-from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+import pytesseract
 
 app = Flask(__name__)
 
@@ -32,101 +31,146 @@ HTML = """
 </html>
 """
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
-MODEL_ID = "microsoft/trocr-small-handwritten"
-REVISION = "main"
-
-PROCESSOR = TrOCRProcessor.from_pretrained(MODEL_ID, revision=REVISION)  # nosec B615
-MODEL = VisionEncoderDecoderModel.from_pretrained(MODEL_ID, revision=REVISION)  # nosec B615
-MODEL.to(DEVICE)
-MODEL.eval()
-
 def pil_to_bgr(img: Image.Image):
     arr = np.array(img.convert("RGB"))
     return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
 
-def crop_table_region(page_bgr):
+def find_table_bbox_lines(page_bgr):
+    gray = cv2.cvtColor(page_bgr, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (3, 3), 0)
+    thr = cv2.adaptiveThreshold(
+        blur, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 31, 10
+    )
+
+    h, w = thr.shape
+    hor_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(40, w // 8), 1))
+    ver_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(40, h // 15)))
+
+    horizontal = cv2.morphologyEx(thr, cv2.MORPH_OPEN, hor_kernel, iterations=1)
+    vertical = cv2.morphologyEx(thr, cv2.MORPH_OPEN, ver_kernel, iterations=1)
+
+    grid = cv2.bitwise_or(horizontal, vertical)
+    grid = cv2.dilate(grid, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)), iterations=2)
+
+    contours, _ = cv2.findContours(grid, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    best = None
+    best_area = 0
+    for c in contours:
+        x, y, cw, ch = cv2.boundingRect(c)
+        area = cw * ch
+        aspect = cw / max(ch, 1)
+        if area < 50000:
+            continue
+        if aspect < 3:
+            continue
+        if area > best_area:
+            best_area = area
+            best = (x, y, cw, ch)
+
+    return best
+
+def find_table_bbox(page_bgr):
     h, w = page_bgr.shape[:2]
-    return page_bgr[int(h * 0.66):int(h * 0.90), int(w * 0.05):int(w * 0.95)]
 
-def get_answer_row(table_bgr):
-    th, tw = table_bgr.shape[:2]
-    return table_bgr[int(th * 0.45):th, :]
+    # avoid bottom black strip in some scans
+    top_roi = page_bgr[:int(h * 0.85), :]
+    bb = find_table_bbox_lines(top_roi)
+    if bb:
+        return bb
 
-def split_10_cells(row_bgr):
-    h, w = row_bgr.shape[:2]
-    cell_w = w / 10.0
-    cells = []
-    for i in range(10):
-        x0 = int(i * cell_w)
-        x1 = int((i + 1) * cell_w)
-        cell = row_bgr[:, x0:x1]
-        ch, cw = cell.shape[:2]
-        cell = cell[int(ch * 0.08):int(ch * 0.95), int(cw * 0.12):int(cw * 0.88)]
-        cells.append(cell)
-    return cells
+    # fallback: search bottom half (student table often near bottom)
+    bottom = page_bgr[int(h * 0.55):h, :]
+    bb2 = find_table_bbox_lines(bottom)
+    if bb2:
+        x, y, cw, ch = bb2
+        return (x, y + int(h * 0.55), cw, ch)
 
-def mask_handwriting(cell_bgr):
-    b, g, r = cv2.split(cell_bgr.astype(np.int16))
-    blue = b - ((g + r) // 2)
-    red = r - ((g + b) // 2)
+    return None
 
-    m1 = (blue > 18).astype(np.uint8) * 255
-    m2 = (red > 18).astype(np.uint8) * 255
-    mask = cv2.bitwise_or(m1, m2)
+def crop_table(page_bgr):
+    bb = find_table_bbox(page_bgr)
+    if not bb:
+        return None
 
-    mask = cv2.medianBlur(mask, 3)
-    mask = cv2.dilate(mask, np.ones((3, 3), np.uint8), iterations=1)
-    return mask
+    x, y, cw, ch = bb
+    h, w = page_bgr.shape[:2]
 
-def trocr_single_letter(cell_bgr):
-    mask = mask_handwriting(cell_bgr)
+    # expand horizontally to capture all 10 columns (student scan shadow can cut bbox)
+    x0 = int(w * 0.02)
+    x1 = int(w * 0.98)
 
-    ys, xs = np.where(mask > 0)
-    if len(xs) < 20:
-        return "?"
+    y0 = max(0, y - 5)
+    y1 = min(h, y + ch + 5)
 
-    x0, x1 = xs.min(), xs.max()
-    y0, y1 = ys.min(), ys.max()
+    return page_bgr[y0:y1, x0:x1]
 
-    pad = 8
-    x0 = max(0, x0 - pad)
-    y0 = max(0, y0 - pad)
-    x1 = min(mask.shape[1] - 1, x1 + pad)
-    y1 = min(mask.shape[0] - 1, y1 + pad)
+def remove_table_lines(bin_img):
+    h, w = bin_img.shape[:2]
+    hor_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(20, w // 3), 1))
+    ver_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(20, h // 2)))
 
-    crop = mask[y0:y1 + 1, x0:x1 + 1]
-    crop = cv2.resize(crop, None, fx=4, fy=4, interpolation=cv2.INTER_NEAREST)
+    horizontal = cv2.morphologyEx(bin_img, cv2.MORPH_OPEN, hor_kernel, iterations=1)
+    vertical = cv2.morphologyEx(bin_img, cv2.MORPH_OPEN, ver_kernel, iterations=1)
 
-    pil = Image.fromarray(255 - crop).convert("RGB")
+    no_lines = cv2.subtract(bin_img, horizontal)
+    no_lines = cv2.subtract(no_lines, vertical)
+    return no_lines
 
-    inputs = PROCESSOR(images=pil, return_tensors="pt").to(DEVICE)
-    with torch.no_grad():
-        ids = MODEL.generate(inputs.pixel_values, max_new_tokens=4)
-    text = PROCESSOR.batch_decode(ids, skip_special_tokens=True)[0].strip().lower()
+def ocr_cell_abcd(cell_bgr):
+    gray = cv2.cvtColor(cell_bgr, cv2.COLOR_BGR2GRAY)
+    thr = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 7
+    )
+    thr = remove_table_lines(thr)
+    thr = cv2.resize(thr, None, fx=5, fy=5, interpolation=cv2.INTER_NEAREST)
+    thr = cv2.medianBlur(thr, 3)
 
-    for ch in text:
+    cfg = "--oem 1 --psm 10 -c tessedit_char_whitelist=abcdABCD"
+    txt = pytesseract.image_to_string(thr, config=cfg).strip().lower()
+
+    for ch in txt:
         if ch in "abcd":
             return ch
     return "?"
 
-def extract_answers(pdf_file, page_index=1):
+def extract_answers_from_page2(pdf_file):
     pages = convert_from_bytes(pdf_file.read(), dpi=250)
-    if len(pages) <= page_index:
+    if len(pages) < 2:
         return None
 
-    page_bgr = pil_to_bgr(pages[page_index])
-    table = crop_table_region(page_bgr)
-    row = get_answer_row(table)
-    cells = split_10_cells(row)
-    return [trocr_single_letter(c) for c in cells]
+    page2_bgr = pil_to_bgr(pages[1])
+    table = crop_table(page2_bgr)
+    if table is None:
+        return None
 
-def grade(student, key):
+    th, tw = table.shape[:2]
+
+    # letters are in the lower band of the table (skip the numbers row)
+    letters_band = table[int(th * 0.35):int(th * 0.95), :]
+
+    bh, bw = letters_band.shape[:2]
+    cell_w = bw / 10.0
+
+    answers = []
+    for i in range(10):
+        x0 = int(i * cell_w)
+        x1 = int((i + 1) * cell_w)
+        cell = letters_band[:, x0:x1]
+
+        ch, cw = cell.shape[:2]
+        cell = cell[int(ch * 0.05):int(ch * 0.95), int(cw * 0.12):int(cw * 0.88)]
+
+        answers.append(ocr_cell_abcd(cell))
+
+    return answers
+
+def grade(student_ans, key_ans):
     correct = 0
     lines = []
     for i in range(10):
-        s, k = student[i], key[i]
+        s = student_ans[i]
+        k = key_ans[i]
         if s == "?" or k == "?":
             lines.append(f"Q{i+1}: student={s} | key={k} -> Unknown (OCR)")
             continue
@@ -138,16 +182,17 @@ def grade(student, key):
 @app.route("/", methods=["GET", "POST"])
 def index():
     result = None
+
     if request.method == "POST":
         try:
             student_file = request.files["student"]
             key_file = request.files["key"]
 
-            student_ans = extract_answers(student_file, page_index=1)
-            key_ans = extract_answers(key_file, page_index=1)
+            student_ans = extract_answers_from_page2(student_file)
+            key_ans = extract_answers_from_page2(key_file)
 
             if not student_ans or not key_ans:
-                result = "Could not read page 2 from PDFs."
+                result = "Could not detect the answers table on page 2 for student or key."
             else:
                 score, details = grade(student_ans, key_ans)
                 unknowns = sum(1 for x in student_ans if x == "?") + sum(1 for x in key_ans if x == "?")
@@ -158,6 +203,7 @@ def index():
                     f"Unknown cells: {unknowns}\n\n"
                     f"{details}"
                 )
+
         except Exception as e:
             result = f"ERROR: {e}"
 
