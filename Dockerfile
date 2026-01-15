@@ -7,12 +7,13 @@ RUN apt-get update && apt-get install -y \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir flask pdf2image pillow transformers sentencepiece
+RUN pip install --no-cache-dir flask pdf2image pillow transformers sentencepiece protobuf
 
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
 EXPOSE 5000
 CMD ["python", "app.py"]
+
 
 
 
