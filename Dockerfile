@@ -4,12 +4,14 @@ WORKDIR /app
 COPY . .
 
 RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir flask pdf2image pillow pytesseract opencv-python-headless numpy
+RUN pip install --no-cache-dir \
+    flask pdf2image pillow numpy opencv-python-headless \
+    transformers sentencepiece protobuf
+
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
 EXPOSE 5000
 CMD ["python", "app.py"]
-

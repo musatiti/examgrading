@@ -1,9 +1,10 @@
 from flask import Flask, request, render_template_string
 from pdf2image import convert_from_bytes
 from PIL import Image
-import pytesseract
 import numpy as np
 import cv2
+import torch
+from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 
 app = Flask(__name__)
 
@@ -12,7 +13,7 @@ HTML = """
 <html>
 <head><title>AI Exam Grader</title></head>
 <body>
-  <h1>AI Exam Grader (MCQ Q1)</h1>
+  <h1>AI Exam Grader (Q1 MCQ)</h1>
   <form method="POST" enctype="multipart/form-data">
     <label>Student Exam (PDF):</label><br>
     <input type="file" name="student" required><br><br>
@@ -31,164 +32,132 @@ HTML = """
 </html>
 """
 
-def pil_to_cv(img: Image.Image):
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+MODEL_ID = "microsoft/trocr-small-handwritten"
+REVISION = "main"
+
+PROCESSOR = TrOCRProcessor.from_pretrained(MODEL_ID, revision=REVISION)  # nosec B615
+MODEL = VisionEncoderDecoderModel.from_pretrained(MODEL_ID, revision=REVISION)  # nosec B615
+MODEL.to(DEVICE)
+MODEL.eval()
+
+def pil_to_bgr(img: Image.Image):
     arr = np.array(img.convert("RGB"))
     return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
 
-def find_answer_table(page_bgr):
+def crop_table_region(page_bgr):
     h, w = page_bgr.shape[:2]
-    bottom = page_bgr[int(h * 0.55):h, 0:w]  # search only bottom half
+    return page_bgr[int(h * 0.66):int(h * 0.90), int(w * 0.05):int(w * 0.95)]
 
-    gray = cv2.cvtColor(bottom, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+def get_answer_row(table_bgr):
+    th, tw = table_bgr.shape[:2]
+    return table_bgr[int(th * 0.45):th, :]
 
-    # make borders/ink pop
-    thr = cv2.adaptiveThreshold(
-        blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 7
-    )
+def split_10_cells(row_bgr):
+    h, w = row_bgr.shape[:2]
+    cell_w = w / 10.0
+    cells = []
+    for i in range(10):
+        x0 = int(i * cell_w)
+        x1 = int((i + 1) * cell_w)
+        cell = row_bgr[:, x0:x1]
+        ch, cw = cell.shape[:2]
+        cell = cell[int(ch * 0.08):int(ch * 0.95), int(cw * 0.12):int(cw * 0.88)]
+        cells.append(cell)
+    return cells
 
-    # connect table lines
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 5))
-    thr2 = cv2.dilate(thr, kernel, iterations=2)
+def mask_handwriting(cell_bgr):
+    b, g, r = cv2.split(cell_bgr.astype(np.int16))
+    blue = b - ((g + r) // 2)
+    red = r - ((g + b) // 2)
 
-    contours, _ = cv2.findContours(thr2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
-        return None
+    m1 = (blue > 18).astype(np.uint8) * 255
+    m2 = (red > 18).astype(np.uint8) * 255
+    mask = cv2.bitwise_or(m1, m2)
 
-    # choose the widest large rectangle (the answers table)
-    best = None
-    best_score = 0
-    for c in contours:
-        x, y, cw, ch = cv2.boundingRect(c)
-        area = cw * ch
-        if area < 20000:
-            continue
-        aspect = cw / max(ch, 1)
-        score = area * aspect
-        if score > best_score:
-            best_score = score
-            best = (x, y, cw, ch)
+    mask = cv2.medianBlur(mask, 3)
+    mask = cv2.dilate(mask, np.ones((3, 3), np.uint8), iterations=1)
+    return mask
 
-    if not best:
-        return None
+def trocr_single_letter(cell_bgr):
+    mask = mask_handwriting(cell_bgr)
 
-    x, y, cw, ch = best
-    table = bottom[y:y + ch, x:x + cw]
-    return table
+    ys, xs = np.where(mask > 0)
+    if len(xs) < 20:
+        return "?"
 
-def remove_table_lines(cell_bin):
-    # remove horizontal and vertical lines so OCR sees only handwriting
-    h, w = cell_bin.shape[:2]
+    x0, x1 = xs.min(), xs.max()
+    y0, y1 = ys.min(), ys.max()
 
-    hor_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(10, w // 3), 1))
-    ver_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(10, h // 3)))
+    pad = 8
+    x0 = max(0, x0 - pad)
+    y0 = max(0, y0 - pad)
+    x1 = min(mask.shape[1] - 1, x1 + pad)
+    y1 = min(mask.shape[0] - 1, y1 + pad)
 
-    horizontal = cv2.morphologyEx(cell_bin, cv2.MORPH_OPEN, hor_kernel, iterations=1)
-    vertical = cv2.morphologyEx(cell_bin, cv2.MORPH_OPEN, ver_kernel, iterations=1)
+    crop = mask[y0:y1 + 1, x0:x1 + 1]
+    crop = cv2.resize(crop, None, fx=4, fy=4, interpolation=cv2.INTER_NEAREST)
 
-    no_lines = cv2.subtract(cell_bin, horizontal)
-    no_lines = cv2.subtract(no_lines, vertical)
-    return no_lines
+    pil = Image.fromarray(255 - crop).convert("RGB")
 
-def ocr_choice_from_cell(cell_bgr):
-    gray = cv2.cvtColor(cell_bgr, cv2.COLOR_BGR2GRAY)
+    inputs = PROCESSOR(images=pil, return_tensors="pt").to(DEVICE)
+    with torch.no_grad():
+        ids = MODEL.generate(inputs.pixel_values, max_new_tokens=4)
+    text = PROCESSOR.batch_decode(ids, skip_special_tokens=True)[0].strip().lower()
 
-    # binarize
-    thr = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 7
-    )
-
-    thr = remove_table_lines(thr)
-
-    # enlarge
-    thr = cv2.resize(thr, None, fx=4, fy=4, interpolation=cv2.INTER_NEAREST)
-
-    # denoise slightly
-    thr = cv2.medianBlur(thr, 3)
-
-    # OCR single char
-    cfg = "--oem 1 --psm 10 -c tessedit_char_whitelist=abcdABCD"
-    txt = pytesseract.image_to_string(thr, config=cfg).strip().lower()
-
-    for ch in txt:
+    for ch in text:
         if ch in "abcd":
             return ch
     return "?"
 
-def extract_mcq_answers(pdf_file, page_index=1):
-    pages = convert_from_bytes(pdf_file.read(), dpi=200)
+def extract_answers(pdf_file, page_index=1):
+    pages = convert_from_bytes(pdf_file.read(), dpi=250)
     if len(pages) <= page_index:
         return None
 
-    page_bgr = pil_to_cv(pages[page_index])
-    table = find_answer_table(page_bgr)
-    if table is None:
-        return None
+    page_bgr = pil_to_bgr(pages[page_index])
+    table = crop_table_region(page_bgr)
+    row = get_answer_row(table)
+    cells = split_10_cells(row)
+    return [trocr_single_letter(c) for c in cells]
 
-    # focus on the lower half of the table where answers are written (letters row)
-    th, tw = table.shape[:2]
-    letters_row = table[int(th * 0.45):th, 0:tw]
-
-    # split into 10 equal columns
-    cell_w = tw / 10.0
-    answers = []
-    for i in range(10):
-        x0 = int(i * cell_w)
-        x1 = int((i + 1) * cell_w)
-
-        cell = letters_row[:, x0:x1]
-
-        # trim borders inside each cell
-        ch, cw = cell.shape[:2]
-        cell = cell[int(ch * 0.05):int(ch * 0.95), int(cw * 0.10):int(cw * 0.90)]
-
-        answers.append(ocr_choice_from_cell(cell))
-
-    return answers
-
-def grade_mcq(student_ans, key_ans):
+def grade(student, key):
     correct = 0
     lines = []
     for i in range(10):
-        s = student_ans[i]
-        k = key_ans[i]
-
+        s, k = student[i], key[i]
         if s == "?" or k == "?":
             lines.append(f"Q{i+1}: student={s} | key={k} -> Unknown (OCR)")
             continue
-
         ok = (s == k)
         correct += 1 if ok else 0
         lines.append(f"Q{i+1}: student={s} | key={k} -> {'Correct' if ok else 'Wrong'}")
-
     return correct, "\n".join(lines)
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     result = None
-
     if request.method == "POST":
         try:
             student_file = request.files["student"]
             key_file = request.files["key"]
 
-            student_ans = extract_mcq_answers(student_file, page_index=1)
-            key_ans = extract_mcq_answers(key_file, page_index=1)
+            student_ans = extract_answers(student_file, page_index=1)
+            key_ans = extract_answers(key_file, page_index=1)
 
             if not student_ans or not key_ans:
-                result = "Could not detect the answers table on page 2. Try a clearer scan."
+                result = "Could not read page 2 from PDFs."
             else:
-                correct, details = grade_mcq(student_ans, key_ans)
+                score, details = grade(student_ans, key_ans)
                 unknowns = sum(1 for x in student_ans if x == "?") + sum(1 for x in key_ans if x == "?")
-
                 result = (
-                    f"MCQ (Q1) Score: {correct}/10\n"
+                    f"MCQ (Q1) Score: {score}/10\n"
                     f"Student: {' '.join(student_ans)}\n"
                     f"Key:     {' '.join(key_ans)}\n"
                     f"Unknown cells: {unknowns}\n\n"
                     f"{details}"
                 )
-
         except Exception as e:
             result = f"ERROR: {e}"
 
