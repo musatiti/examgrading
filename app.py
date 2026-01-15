@@ -1,29 +1,33 @@
-# app.py
 import os
+import base64
 from io import BytesIO
 
 from flask import Flask, request, render_template_string
 from pdf2image import convert_from_bytes
-from google import genai
-from google.genai import types
+from openai import OpenAI
 
-if "GEMINI_API_KEY" not in os.environ or not os.environ["GEMINI_API_KEY"].strip():
-    raise RuntimeError("GEMINI_API_KEY not set")
+if "OPENAI_API_KEY" not in os.environ or not os.environ["OPENAI_API_KEY"].strip():
+    raise RuntimeError("OPENAI_API_KEY not set")
 
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-MODEL_NAME = "gemini-2.0-flash"
+client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 app = Flask(__name__)
 
-def pdf_to_png_bytes_list(file_storage, max_pages=3):
+def pdf_to_data_urls(file_storage, max_pages=3, max_width=1100):
     data = file_storage.read()
     pages = convert_from_bytes(data)
-    out = []
+    urls = []
     for page in pages[:max_pages]:
+        img = page.convert("RGB")
+        if img.width > max_width:
+            new_h = int(img.height * (max_width / img.width))
+            img = img.resize((max_width, new_h))
+
         bio = BytesIO()
-        page.convert("RGB").save(bio, format="PNG")
-        out.append(bio.getvalue())
-    return out
+        img.save(bio, format="PNG", optimize=True)
+        b64 = base64.b64encode(bio.getvalue()).decode("utf-8")
+        urls.append(f"data:image/png;base64,{b64}")
+    return urls
 
 HTML = """
 <!DOCTYPE html>
@@ -58,33 +62,49 @@ def index():
             student_file = request.files["student"]
             key_file = request.files["key"]
 
-            key_imgs = pdf_to_png_bytes_list(key_file, max_pages=3)
-            student_imgs = pdf_to_png_bytes_list(student_file, max_pages=3)
+            key_pages = pdf_to_data_urls(key_file, max_pages=3)
+            student_pages = pdf_to_data_urls(student_file, max_pages=3)
 
-            contents = [
-                "You are an exam grader. The exam and key are handwritten.\n"
-                "The first images are the ANSWER KEY, then the STUDENT EXAM.\n"
-                "Compare answers question-by-question.\n"
-                "Return ONLY:\n"
-                "1) Total score (e.g., 17/20)\n"
-                "2) Per-question results (Correct/Wrong)\n"
-                "3) Mistakes\n"
-                "4) Brief feedback\n"
+            input_items = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": (
+                                "You are an exam grader.\n"
+                                "The first set of images are the ANSWER KEY (handwritten).\n"
+                                "The second set of images are the STUDENT EXAM (handwritten).\n"
+                                "Compare question-by-question.\n\n"
+                                "Return ONLY:\n"
+                                "1) Total score (e.g., 17/20)\n"
+                                "2) Per-question result table (Q#, Correct/Wrong, points)\n"
+                                "3) Mistakes\n"
+                                "4) Brief feedback\n"
+                            ),
+                        }
+                    ],
+                }
             ]
 
-            for b in key_imgs:
-                contents.append(types.Part.from_bytes(data=b, mime_type="image/png"))
+            for u in key_pages:
+                input_items[0]["content"].append({"type": "input_image", "image_url": u})
 
-            for b in student_imgs:
-                contents.append(types.Part.from_bytes(data=b, mime_type="image/png"))
+            for u in student_pages:
+                input_items[0]["content"].append({"type": "input_image", "image_url": u})
 
-            resp = client.models.generate_content(model=MODEL_NAME, contents=contents)
-            result = resp.text
+            resp = client.responses.create(
+                model="gpt-4o",
+                input=input_items,
+            )
+
+            result = resp.output_text
 
         except Exception as e:
             result = f"AI ERROR: {e}"
 
     return render_template_string(HTML, result=result)
+
 
 if __name__ == "__main__":
     app.run( host="0.0.0.0", # nosec B104
