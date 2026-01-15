@@ -6,7 +6,7 @@ from pdf2image import convert_from_bytes
 
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-1.0-pro")
+model = genai.GenerativeModel("models/gemini-1.0-pro")
 
 app = Flask(__name__)
 
