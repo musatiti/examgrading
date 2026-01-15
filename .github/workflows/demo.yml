@@ -49,7 +49,7 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build --no-cache\
+          docker build --no-cache \
           --build-arg GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} \
           -t ${{ secrets.DOCKERHUB_USERNAME }}/gp:latest .
 
