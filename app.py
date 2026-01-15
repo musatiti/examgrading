@@ -1,33 +1,16 @@
-import re
-from difflib import SequenceMatcher
-from io import BytesIO
-
 from flask import Flask, request, render_template_string
 from pdf2image import convert_from_bytes
 from PIL import Image
-
-import torch
-from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+import pytesseract
 
 app = Flask(__name__)
-
-# Handwritten TrOCR model (AI OCR)
-# Model exists on Hugging Face and is designed for handwritten text. :contentReference[oaicite:1]{index=1}
-PROCESSOR = TrOCRProcessor.from_pretrained("microsoft/trocr-small-handwritten")  # nosec B615
-MODEL = VisionEncoderDecoderModel.from_pretrained("microsoft/trocr-small-handwritten")  # nosec B615
-
-
-MODEL.eval()
-
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL.to(DEVICE)
 
 HTML = """
 <!DOCTYPE html>
 <html>
 <head><title>AI Exam Grader</title></head>
 <body>
-  <h1>AI Exam Grader (Local AI - TrOCR)</h1>
+  <h1>AI Exam Grader</h1>
   <form method="POST" enctype="multipart/form-data">
     <label>Student Exam (PDF):</label><br>
     <input type="file" name="student" required><br><br>
@@ -46,64 +29,55 @@ HTML = """
 </html>
 """
 
-def ocr_image_trocr(pil_img: Image.Image) -> str:
-    pil_img = pil_img.convert("RGB")
-    inputs = PROCESSOR(images=pil_img, return_tensors="pt")
-    pixel_values = inputs.pixel_values.to(DEVICE)
+def crop_answer_area(page_img: Image.Image) -> Image.Image:
+    w, h = page_img.size
+    # Bottom part where the 1..10 answers are
+    # These ratios work for your provided PDFs
+    return page_img.crop((int(w * 0.06), int(h * 0.79), int(w * 0.94), int(h * 0.94)))
 
-    with torch.no_grad():
-        generated_ids = MODEL.generate(pixel_values, max_new_tokens=128)
+def split_10_cells(row_img: Image.Image):
+    w, h = row_img.size
+    cell_w = w / 10.0
+    cells = []
+    for i in range(10):
+        x0 = int(i * cell_w)
+        x1 = int((i + 1) * cell_w)
+        # crop inside a bit to avoid borders
+        cells.append(row_img.crop((x0 + 6, 0, x1 - 6, h)))
+    return cells
 
-    text = PROCESSOR.batch_decode(generated_ids, skip_special_tokens=True)[0]
-    return text.strip()
+def read_one_choice(cell_img: Image.Image) -> str:
+    img = cell_img.convert("L")
+    img = img.point(lambda p: 0 if p < 160 else 255)  # simple threshold
+    cfg = "--psm 10 -c tessedit_char_whitelist=abcdABCD"
+    text = pytesseract.image_to_string(img, config=cfg).strip().lower()
+    for ch in text:
+        if ch in "abcd":
+            return ch
+    return "?"
 
-def pdf_to_text_trocr(file_storage, max_pages=3) -> str:
-    pages = convert_from_bytes(file_storage.read())
-    out = []
-    for page in pages[:max_pages]:
-        out.append(ocr_image_trocr(page))
-    return "\n".join([x for x in out if x]) or "NO TEXT DETECTED"
+def extract_mcq_answers(pdf_file, page_index=1):
+    # page_index=1 => second page (0-based)
+    pages = convert_from_bytes(pdf_file.read())
+    if len(pages) <= page_index:
+        return None
 
-def normalize_lines(text: str):
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    return lines
+    page = pages[page_index].convert("RGB")
+    area = crop_answer_area(page)
+    cells = split_10_cells(area)
+    answers = [read_one_choice(c) for c in cells]
+    return answers
 
-def sim(a: str, b: str) -> float:
-    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
-
-def grade_by_lines(key_text: str, student_text: str):
-    key_lines = normalize_lines(key_text)
-    stu_lines = normalize_lines(student_text)
-
-    n = min(len(key_lines), len(stu_lines))
-    if n == 0:
-        return "Could not extract readable answers (handwriting OCR failed). Try clearer scans."
-
+def grade_mcq(student_ans, key_ans):
     correct = 0
-    details = []
-
-    for i in range(n):
-        k = key_lines[i]
-        s = stu_lines[i]
-        score = sim(k, s)
-
-        ok = score >= 0.75
-        if ok:
-            correct += 1
-
-        details.append(
-            f"Q{i+1} | match {score*100:.1f}% | {'Correct' if ok else 'Wrong'}\n"
-            f"Key: {k}\n"
-            f"Student: {s}\n"
-        )
-
-    total = f"Total: {correct}/{n}\n"
-    feedback = (
-        "Feedback:\n"
-        "- OCR is AI-based and may misread handwriting; clearer scans improve accuracy.\n"
-        "- If many mismatches are close, handwriting recognition likely introduced errors.\n"
-    )
-    return total + "\n".join(details) + "\n" + feedback
+    lines = []
+    for i in range(10):
+        s = student_ans[i]
+        k = key_ans[i]
+        ok = (s == k)
+        correct += 1 if ok else 0
+        lines.append(f"Q{i+1}: student={s} | key={k} -> {'Correct' if ok else 'Wrong'}")
+    return correct, "\n".join(lines)
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -114,17 +88,24 @@ def index():
             student_file = request.files["student"]
             key_file = request.files["key"]
 
-            key_text = pdf_to_text_trocr(key_file, max_pages=3)
-            student_text = pdf_to_text_trocr(student_file, max_pages=3)
+            student_ans = extract_mcq_answers(student_file, page_index=1)
+            key_ans = extract_mcq_answers(key_file, page_index=1)
 
-            result = grade_by_lines(key_text, student_text)
+            if not student_ans or not key_ans:
+                result = "Could not read page 2 from one of the PDFs."
+            else:
+                correct, details = grade_mcq(student_ans, key_ans)
+                result = (
+                    f"MCQ (Q1) Score: {correct}/10\n"
+                    f"Student: {' '.join(student_ans)}\n"
+                    f"Key:     {' '.join(key_ans)}\n\n"
+                    f"{details}"
+                )
 
         except Exception as e:
             result = f"ERROR: {e}"
 
     return render_template_string(HTML, result=result)
-
-
 
 if __name__ == "__main__":
     app.run( host="0.0.0.0", # nosec B104
