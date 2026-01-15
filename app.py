@@ -1,54 +1,81 @@
-import os
-import base64
-from io import BytesIO
-
 from flask import Flask, request, render_template_string
 from pdf2image import convert_from_bytes
-from openai import OpenAI
-
-if "OPENAI_API_KEY" not in os.environ or not os.environ["OPENAI_API_KEY"].strip():
-    raise RuntimeError("OPENAI_API_KEY not set")
-
-client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+import pytesseract
+import re
+from difflib import SequenceMatcher
 
 app = Flask(__name__)
 
-def pdf_to_data_urls(file_storage, max_pages=3, max_width=1100):
-    data = file_storage.read()
-    pages = convert_from_bytes(data)
-    urls = []
-    for page in pages[:max_pages]:
-        img = page.convert("RGB")
-        if img.width > max_width:
-            new_h = int(img.height * (max_width / img.width))
-            img = img.resize((max_width, new_h))
+def pdf_to_text(file):
+    pages = convert_from_bytes(file.read())
+    text = ""
+    for page in pages:
+        text += pytesseract.image_to_string(page) + "\n"
+    return text.strip() or "NO TEXT DETECTED"
 
-        bio = BytesIO()
-        img.save(bio, format="PNG", optimize=True)
-        b64 = base64.b64encode(bio.getvalue()).decode("utf-8")
-        urls.append(f"data:image/png;base64,{b64}")
-    return urls
+def similarity(a, b):
+    return SequenceMatcher(None, a, b).ratio()
+
+def grade_exam(key_text, student_text):
+    key_lines = [line.strip() for line in key_text.split("\n") if line.strip()]
+    student_lines = [line.strip() for line in student_text.split("\n") if line.strip()]
+
+    total_questions = min(len(key_lines), len(student_lines))
+    if total_questions == 0:
+        return "Could not detect answers. OCR failed."
+
+    correct = 0
+    report = []
+
+    for i in range(total_questions):
+        key_ans = key_lines[i]
+        student_ans = student_lines[i]
+
+        score = similarity(key_ans.lower(), student_ans.lower())
+        status = "✅ Correct" if score >= 0.75 else "❌ Wrong"
+
+        if score >= 0.75:
+            correct += 1
+
+        report.append(
+            f"Q{i+1}:\n"
+            f"Key: {key_ans}\n"
+            f"Student: {student_ans}\n"
+            f"Match: {score*100:.1f}% → {status}\n"
+        )
+
+    final_score = f"Final Score: {correct}/{total_questions}\n\n"
+    feedback = "Feedback:\n"
+    if correct == total_questions:
+        feedback += "- Excellent work ✅\n"
+    elif correct >= total_questions * 0.7:
+        feedback += "- Good work, revise mistakes ⚠️\n"
+    else:
+        feedback += "- Needs improvement, study the key answers more ❗\n"
+
+    return final_score + "\n".join(report) + "\n" + feedback
 
 HTML = """
 <!DOCTYPE html>
 <html>
-<head><title>AI Exam Grader</title></head>
+<head><title>Exam Grader</title></head>
 <body>
-  <h1>AI Exam Grader (Handwritten)</h1>
-  <form method="POST" enctype="multipart/form-data">
-    <label>Student Exam (PDF):</label><br>
-    <input type="file" name="student" required><br><br>
+    <h1>Offline Exam Grader (No API)</h1>
 
-    <label>Answer Key (PDF):</label><br>
-    <input type="file" name="key" required><br><br>
+    <form method="POST" enctype="multipart/form-data">
+        <label>Student Exam (PDF):</label><br>
+        <input type="file" name="student" required><br><br>
 
-    <button type="submit">Grade</button>
-  </form>
+        <label>Answer Key (PDF):</label><br>
+        <input type="file" name="key" required><br><br>
 
-  {% if result %}
-    <h2>Grade & Feedback</h2>
-    <pre>{{ result }}</pre>
-  {% endif %}
+        <button type="submit">Grade</button>
+    </form>
+
+    {% if result %}
+        <h2>Results</h2>
+        <pre>{{ result }}</pre>
+    {% endif %}
 </body>
 </html>
 """
@@ -56,52 +83,18 @@ HTML = """
 @app.route("/", methods=["GET", "POST"])
 def index():
     result = None
-
     if request.method == "POST":
         try:
             student_file = request.files["student"]
             key_file = request.files["key"]
 
-            key_pages = pdf_to_data_urls(key_file, max_pages=3)
-            student_pages = pdf_to_data_urls(student_file, max_pages=3)
+            student_text = pdf_to_text(student_file)
+            key_text = pdf_to_text(key_file)
 
-            input_items = [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": (
-                                "You are an exam grader.\n"
-                                "The first set of images are the ANSWER KEY (handwritten).\n"
-                                "The second set of images are the STUDENT EXAM (handwritten).\n"
-                                "Compare question-by-question.\n\n"
-                                "Return ONLY:\n"
-                                "1) Total score (e.g., 17/20)\n"
-                                "2) Per-question result table (Q#, Correct/Wrong, points)\n"
-                                "3) Mistakes\n"
-                                "4) Brief feedback\n"
-                            ),
-                        }
-                    ],
-                }
-            ]
-
-            for u in key_pages:
-                input_items[0]["content"].append({"type": "input_image", "image_url": u})
-
-            for u in student_pages:
-                input_items[0]["content"].append({"type": "input_image", "image_url": u})
-
-            resp = client.responses.create(
-                model="gpt-4o",
-                input=input_items,
-            )
-
-            result = resp.output_text
+            result = grade_exam(key_text, student_text)
 
         except Exception as e:
-            result = f"AI ERROR: {e}"
+            result = f"Error: {e}"
 
     return render_template_string(HTML, result=result)
 
