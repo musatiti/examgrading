@@ -7,7 +7,7 @@ from pdf2image import convert_from_bytes
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1/models/"
-    "gemini-1.5-pro:generateContent?key=" + GEMINI_API_KEY
+    "gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY
 )
 
 app = Flask(__name__)
