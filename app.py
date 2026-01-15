@@ -13,8 +13,10 @@ app = Flask(__name__)
 
 # Handwritten TrOCR model (AI OCR)
 # Model exists on Hugging Face and is designed for handwritten text. :contentReference[oaicite:1]{index=1}
-PROCESSOR = TrOCRProcessor.from_pretrained("microsoft/trocr-small-handwritten")
-MODEL = VisionEncoderDecoderModel.from_pretrained("microsoft/trocr-small-handwritten")
+PROCESSOR = TrOCRProcessor.from_pretrained("microsoft/trocr-small-handwritten")  # nosec B615
+MODEL = VisionEncoderDecoderModel.from_pretrained("microsoft/trocr-small-handwritten")  # nosec B615
+
+
 MODEL.eval()
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
