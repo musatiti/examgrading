@@ -1,97 +1,73 @@
 from flask import Flask, request, render_template_string
-from pdf2image import convert_from_bytes
-import pytesseract
-import re
-from difflib import SequenceMatcher
 
 app = Flask(__name__)
-
-def pdf_to_text(file):
-    pages = convert_from_bytes(file.read())
-    text = ""
-    for page in pages:
-        text += pytesseract.image_to_string(page) + "\n"
-    return text.strip() or "NO TEXT DETECTED"
-
-def similarity(a, b):
-    return SequenceMatcher(None, a, b).ratio()
-
-def grade_exam(key_text, student_text):
-    key_lines = [line.strip() for line in key_text.split("\n") if line.strip()]
-    student_lines = [line.strip() for line in student_text.split("\n") if line.strip()]
-
-    total_questions = min(len(key_lines), len(student_lines))
-    if total_questions == 0:
-        return "Could not detect answers. OCR failed."
-
-    correct = 0
-    report = []
-
-    for i in range(total_questions):
-        key_ans = key_lines[i]
-        student_ans = student_lines[i]
-
-        score = similarity(key_ans.lower(), student_ans.lower())
-        status = "✅ Correct" if score >= 0.75 else "❌ Wrong"
-
-        if score >= 0.75:
-            correct += 1
-
-        report.append(
-            f"Q{i+1}:\n"
-            f"Key: {key_ans}\n"
-            f"Student: {student_ans}\n"
-            f"Match: {score*100:.1f}% → {status}\n"
-        )
-
-    final_score = f"Final Score: {correct}/{total_questions}\n\n"
-    feedback = "Feedback:\n"
-    if correct == total_questions:
-        feedback += "- Excellent work ✅\n"
-    elif correct >= total_questions * 0.7:
-        feedback += "- Good work, revise mistakes ⚠️\n"
-    else:
-        feedback += "- Needs improvement, study the key answers more ❗\n"
-
-    return final_score + "\n".join(report) + "\n" + feedback
 
 HTML = """
 <!DOCTYPE html>
 <html>
-<head><title>Exam Grader</title></head>
+<head>
+  <title>AI Exam Grader</title>
+  <style>
+    body { font-family: Arial; margin: 30px; }
+    button { padding: 10px 15px; }
+    pre { background: #f5f5f5; padding: 15px; border-radius: 8px; }
+  </style>
+</head>
 <body>
-    <h1>Offline Exam Grader (No API)</h1>
+  <h1>AI Exam Grader</h1>
 
-    <form method="POST" enctype="multipart/form-data">
-        <label>Student Exam (PDF):</label><br>
-        <input type="file" name="student" required><br><br>
+  <form method="POST" enctype="multipart/form-data">
+    <label>Student Exam (PDF):</label><br>
+    <input type="file" name="student" required><br><br>
 
-        <label>Answer Key (PDF):</label><br>
-        <input type="file" name="key" required><br><br>
+    <label>Answer Key (PDF):</label><br>
+    <input type="file" name="key" required><br><br>
 
-        <button type="submit">Grade</button>
-    </form>
+    <button type="submit">Grade with AI</button>
+  </form>
 
-    {% if result %}
-        <h2>Results</h2>
-        <pre>{{ result }}</pre>
-    {% endif %}
+  {% if result %}
+    <h2>Grade & Feedback</h2>
+    <pre>{{ result }}</pre>
+  {% endif %}
 </body>
 </html>
+"""
+
+def demo_ai_grade_output():
+    return """Demo Mode (Simulated AI Result)
+
+Total Score: 10.5 / 15
+
+Question 1 (MCQ):
+- Score: 10.5 / 15
+- Correct Answers: 7 / 10
+- Wrong Answers: 3 / 10
+
+Mistakes:
+- Q1: Incorrect choice
+- Q2: Incorrect choice
+- Q6: Incorrect choice
+
+Feedback:
+- Good work overall.
+- Review the incorrect questions and make sure you understand why the correct choice is correct.
+- Your answers are consistent and clearly written.
 """
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     result = None
+
     if request.method == "POST":
         try:
-            student_file = request.files["student"]
-            key_file = request.files["key"]
+            student_file = request.files.get("student")
+            key_file = request.files.get("key")
 
-            student_text = pdf_to_text(student_file)
-            key_text = pdf_to_text(key_file)
-
-            result = grade_exam(key_text, student_text)
+            if not student_file or not key_file:
+                result = "Error: Missing files."
+            else:
+                result = demo_ai_grade_output()
 
         except Exception as e:
             result = f"Error: {e}"
