@@ -34,26 +34,58 @@ HTML = """
 </html>
 """
 
-def demo_ai_grade_output():
-    return """Demo Mode (Simulated AI Result)
+def demo_output():
+    q1_student = "a c d a b d a c a d"
+    q1_key = "b d d a b a a c a d"
+    q1_score = "10.5 / 15"
+    q1_correct = "7 / 10"
+    q1_wrong = "3 / 10"
 
-Total Score: 10.5 / 15
+    q2_student = [
+        "S4..S0: 0 1 0 1 1",
+        "A0/B0: 1 / 0",
+        "A1/B1: 0 / 1",
+        "A2/B2: 1 / 1",
+    ]
+    q2_key = [
+        "S4..S0: 0 1 1 0 1",
+        "A0/B0: 1 / 0",
+        "A1/B1: 1 / 1",
+        "A2/B2: 1 / 0",
+    ]
+    q2_score = "6 / 10"
+    q2_correct = "3 / 4"
+    q2_wrong = "1 / 4"
 
-Question 1 (MCQ):
-- Score: 10.5 / 15
-- Correct Answers: 7 / 10
-- Wrong Answers: 3 / 10
+    lines = []
+    lines.append("Demo Mode (Simulated AI Result)\n")
+    lines.append("Total Score: 16.5 / 25\n")
 
-Mistakes:
-- Q1: Incorrect choice
-- Q2: Incorrect choice
-- Q6: Incorrect choice
+    lines.append("Question 1 :")
+    lines.append(f" Student: {q1_student}")
+    lines.append(f" Key: {q1_key}\n")
+    lines.append(f"- Score: {q1_score}")
+    lines.append(f"- Correct Answers: {q1_correct}")
+    lines.append(f"- Wrong Answers: {q1_wrong}\n")
 
-Feedback:
-- Good work overall.
-- Review the incorrect questions and make sure you understand why the correct choice is correct.
-- Your answers are consistent and clearly written.
-"""
+    lines.append("Question 2 :")
+    lines.append(" Student Answers:")
+    for s in q2_student:
+        lines.append(f"  - {s}")
+    lines.append(" Key Answers:")
+    for k in q2_key:
+        lines.append(f"  - {k}")
+    lines.append("")
+    lines.append(f"- Score: {q2_score}")
+    lines.append(f"- Correct Answers: {q2_correct}")
+    lines.append(f"- Wrong Answers: {q2_wrong}\n")
+
+    lines.append("Feedback:")
+    lines.append("- Good work overall.")
+    lines.append("- Review Q1 mistakes (Q1, Q2, Q6).")
+    lines.append("- For Q2, double-check your table bits and final values.")
+
+    return "\n".join(lines)
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -67,7 +99,7 @@ def index():
             if not student_file or not key_file:
                 result = "Error: Missing files."
             else:
-                result = demo_ai_grade_output()
+                result = demo_output()
 
         except Exception as e:
             result = f"Error: {e}"
