@@ -34,7 +34,7 @@ Correct Answers + Explanation
 
 ============================================================
 
-Question 1 (MCQ)
+Question 1 
 
 Q1.1) Equivalent of t2 = A[t0] where base address of A is in $s0
 Correct Answer: B.
@@ -148,8 +148,7 @@ Key Answer Table:
 b d d a b a a c a d
 
 ============================================================
-Question 2 (ALU Selectors) - Key Sheet Explanations
-============================================================
+Question 2 
 
 Q2.1) Subtraction (A − B)
 Key: S4 S3 S2 S1 S0 = 0 1 0 1 1
