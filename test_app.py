@@ -30,4 +30,4 @@ def test_post_with_files():
     assert r.status_code == 200  # nosec B101
     text = r.data.decode("utf-8")
     assert "Grade & Feedback" in text  # nosec B101
-    assert "Demo Mode (Simulated AI Result)" in text  # nosec B101
+    assert "Demo Mode (Simulated AI Result)" in text  # nosec B101 

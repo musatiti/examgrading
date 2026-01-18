@@ -197,4 +197,4 @@ Cout = (A·B) + (Cin·(A ⊕ B))
 Explanation:
 Carry-out is generated when A and B are both 1, or when Cin is 1 and exactly one of A/B is 1.
 This is the standard carry logic for a full adder.
-"""
+""" 
