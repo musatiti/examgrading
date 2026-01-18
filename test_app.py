@@ -1,10 +1,33 @@
-#from app import add_numbers
-def add_numbers(a, b):
-    return a + b
-    
-def test_addition_correct():
-    assert add_numbers(2, 3) == 5 # nosec B101
+import io
+from app import app
 
-def test_addition_fail():
-    # This test will fail intentionally to demonstrate CI catching it
-    assert add_numbers(2, 3) == 5  # nosec B101
+
+def test_homepage():
+    client = app.test_client()
+    r = client.get("/")
+    assert r.status_code == 200
+    text = r.data.decode("utf-8")
+    assert "AI Exam Grader" in text
+
+
+def test_post_without_files():
+    client = app.test_client()
+    r = client.post("/", data={}, content_type="multipart/form-data")
+    assert r.status_code == 200
+    text = r.data.decode("utf-8")
+    assert "Error: Missing files." in text
+
+
+def test_post_with_files():
+    client = app.test_client()
+
+    data = {
+        "student": (io.BytesIO(b"test"), "student.pdf"),
+        "key": (io.BytesIO(b"test"), "key.pdf"),
+    }
+
+    r = client.post("/", data=data, content_type="multipart/form-data")
+    assert r.status_code == 200
+    text = r.data.decode("utf-8")
+    assert "Grade & Feedback" in text
+    assert "Demo Mode (Simulated AI Result)" in text
