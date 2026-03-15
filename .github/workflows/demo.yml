@@ -21,18 +21,15 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install flask pytest pytest-flask bandit
+          pip install flask pytest pytest-flask bandit openai PyPDF2 python-dotenv gunicorn
 
       - name: Run Pytest
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: pytest -v --disable-warnings
-
 
       - name: Run Security Scan
         run: bandit -r .
-        
-      
-
-
 
   docker-build:
     runs-on: ubuntu-latest
@@ -60,4 +57,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gp1-demo-image
-          path: gp1-demo.tar 
+          path: gp1-demo.tar
