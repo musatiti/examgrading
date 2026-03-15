@@ -16,20 +16,22 @@ def test_post_without_files():
     text = r.data.decode("utf-8")
     assert "Error: Missing files." in text  # nosec B101
 
-# We patch your grade_demo function so we don't make real API calls during testing!
+# Patch BOTH the PDF reader and the OpenRouter AI 
+@patch("app.extract_text_from_pdf")
 @patch("app.grade_demo")
-def test_post_with_files(mock_grade_demo):
-    # Set up the fake AI response
+def test_post_with_files(mock_grade_demo, mock_extract):
+    # 1. Tell the fake PDF reader what to return
+    mock_extract.return_value = "Simulated extracted text from PDF"
+    
+    # 2. Tell the fake AI what to return
     mock_grade_demo.return_value = "Mocked AI Result: A+"
 
     client = app.test_client()
 
-    # A minimal valid PDF structure to prevent PyPDF2 from crashing
-    minimal_pdf = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\nstartxref\n0\n%%EOF"
-
+    # 3. Because PyPDF2 is bypassed, we can safely use simple dummy bytes again!
     data = {
-        "student": (io.BytesIO(minimal_pdf), "student.pdf"),
-        "key": (io.BytesIO(minimal_pdf), "key.pdf"),
+        "student": (io.BytesIO(b"dummy"), "student.pdf"),
+        "key": (io.BytesIO(b"dummy"), "key.pdf"),
     }
 
     r = client.post("/", data=data, content_type="multipart/form-data")
@@ -37,6 +39,6 @@ def test_post_with_files(mock_grade_demo):
     assert r.status_code == 200  # nosec B101
     text = r.data.decode("utf-8")
     
-    # Check that it successfully processed and returned our mocked string
+    # 4. Verify our app processed the mocked data correctly
     assert "Grade & Feedback" in text  # nosec B101
     assert "Mocked AI Result: A+" in text  # nosec B101
