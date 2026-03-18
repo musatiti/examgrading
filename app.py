@@ -1,5 +1,7 @@
 from flask import Flask, request, render_template_string
 import PyPDF2
+import pytesseract
+from pdf2image import convert_from_bytes
 from demo_ai import grade_demo
 
 app = Flask(__name__)
@@ -36,15 +38,31 @@ HTML = """
 </body>
 </html>
 """
-
 def extract_text_from_pdf(file):
     try:
+        # 1. Try reading it as a normal digital text PDF
         reader = PyPDF2.PdfReader(file)
         text = ""
         for page in reader.pages:
-            if page.extract_text():
-                text += page.extract_text() + "\n"
-        return text
+            extracted = page.extract_text()
+            if extracted:
+                text += extracted + "\n"
+        
+        # If it found digital text, return it!
+        if text.strip():
+            return text
+            
+        # 2. If text is empty, it must be a scanned image! Let's use OCR.
+        file.seek(0) # Reset the file reader back to the beginning
+        pdf_bytes = file.read()
+        images = convert_from_bytes(pdf_bytes)
+        
+        ocr_text = ""
+        for image in images:
+            ocr_text += pytesseract.image_to_string(image) + "\n"
+            
+        return ocr_text
+        
     except Exception as e:
         return f"Error reading PDF: {str(e)}"
 
