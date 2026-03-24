@@ -9,61 +9,31 @@ def grade_demo(student_text, key_text):
         api_key=api_key,
     )
 
-    # --- INITIAL PROMPT ---
-    prompt = f"Grade this student work based on the answer key.\n\nKey: {key_text}\n\nStudent: {student_text}"
-    messages = [{"role": "user", "content": prompt}]
+    prompt = f"You are an expert examiner. Grade this student's handwritten work based on the provided answer key.\n\nANSWER KEY:\n{key_text}\n\nSTUDENT WORK:\n{student_text}\n\nProvide a fair final grade and point out any specific mistakes."
     
-    # --- FIRST API CALL ---
-    response1 = client.chat.completions.create(
-        model="stepfun/step-3.5-flash:free",
-        messages=messages,
+    # Just ONE API call! DeepSeek R1 handles the reasoning natively.
+    response = client.chat.completions.create(
+        model="deepseek/deepseek-r1:free",
+        messages=[{"role": "user", "content": prompt}],
         extra_body={"reasoning": {"enabled": True}}
     )
     
-    # Extract the assistant message object
-    assistant_message = response1.choices[0].message
-    
-    # --- PREPARE FOR SECOND CALL (REFLECTION) ---
-    # We must construct the assistant message dictionary carefully
-    assistant_dict = {
-        "role": "assistant",
-        "content": assistant_message.content
-    }
-    
-    # Only append reasoning_details if the model actually provided them
-    if hasattr(assistant_message, 'reasoning_details') and assistant_message.reasoning_details:
-        assistant_dict["reasoning_details"] = assistant_message.reasoning_details
-        
-    messages.append(assistant_dict)
-    
-    # Add the follow-up prompt asking it to double-check
-    messages.append({
-        "role": "user", 
-        "content": "Are you sure? Think carefully and double-check your grading for any mistakes."
-    })
-
-    # --- SECOND API CALL ---
-    response2 = client.chat.completions.create(
-        model="stepfun/step-3.5-flash:free",
-        messages=messages,
-        extra_body={"reasoning": {"enabled": True}}
-    )
-    
-    final_message = response2.choices[0].message
-    
-    # --- CLEANUP & RETURN ---
-    raw_reasoning = getattr(final_message, 'reasoning_details', "No reasoning provided.")
+    content = response.choices[0].message.content or ""
+    raw_reasoning = getattr(response.choices[0].message, 'reasoning', None)
     
     clean_reasoning = ""
-    if isinstance(raw_reasoning, list):
-        for item in raw_reasoning:
-            if isinstance(item, dict) and 'text' in item:
-                clean_reasoning += item['text'] + "\n"
-    elif isinstance(raw_reasoning, str):
-        clean_reasoning = raw_reasoning
-    else:
-        clean_reasoning = str(raw_reasoning)
-        
-    final_answer = final_message.content
+    final_answer = ""
     
-    return f"REFINED THINKING PROCESS:\n{clean_reasoning}\n\nFINAL GRADE:\n{final_answer}"
+    # Safely extract the thinking process depending on how OpenRouter formats it
+    if raw_reasoning:
+        clean_reasoning = str(raw_reasoning)
+        final_answer = content
+    elif "<think>" in content and "</think>" in content:
+        parts = content.split("</think>")
+        clean_reasoning = parts[0].replace("<think>", "").strip()
+        final_answer = parts[1].strip() if len(parts) > 1 else "See reasoning above."
+    else:
+        clean_reasoning = "Model graded directly without a separate thinking block."
+        final_answer = content
+        
+    return f"DEEPSEEK'S THINKING PROCESS:\n{clean_reasoning}\n\nFINAL GRADE & FEEDBACK:\n{final_answer}"
