@@ -7,6 +7,7 @@ def grade_demo(student_text, key_text):
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=api_key,
+        timeout=300.0,
     )
 
     prompt = f"Grade this student work based on the answer key.\n\nKey: {key_text}\n\nStudent: {student_text}"
