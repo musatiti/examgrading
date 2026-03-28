@@ -14,7 +14,7 @@ def grade_demo(student_text, key_text):
     prompt = f"You are an expert examiner. Grade this student's handwritten work based on the provided answer key.\n\nANSWER KEY:\n{key_text}\n\nSTUDENT WORK:\n{student_text}\n\nProvide a fair final grade and point out any specific mistakes."
     
     response = client.chat.completions.create(
-        model="openrouter/hunter-alpha",
+        model="xiaomi/mimo-v2-pro",
         messages=[{"role": "user", "content": prompt}],
         extra_body={"reasoning": {"enabled": True}}
     )
