@@ -5,6 +5,7 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+# Install system dependencies for OCR (Tesseract and Poppler)
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     poppler-utils \
@@ -17,4 +18,5 @@ COPY . .
 
 EXPOSE 5000
 
+# 300-second timeout to allow OCR and AI reasoning to finish
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--timeout", "300", "app:app"]

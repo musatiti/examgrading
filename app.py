@@ -6,16 +6,15 @@ from demo_ai import grade_demo
 
 app = Flask(__name__)
 
-# The missing HTML string!
 HTML = """
 <!DOCTYPE html>
 <html>
 <head>
   <title>AI Exam Grader</title>
   <style>
-    body { font-family: Arial; margin: 30px; }
-    button { padding: 10px 15px; }
-    pre { background: #f5f5f5; padding: 15px; border-radius: 8px; white-space: pre-wrap; }
+    body { font-family: Arial; margin: 30px; line-height: 1.6; }
+    button { padding: 10px 15px; cursor: pointer; }
+    pre { background: #f5f5f5; padding: 15px; border-radius: 8px; white-space: pre-wrap; font-family: monospace; }
   </style>
 </head>
 <body>
@@ -38,9 +37,10 @@ HTML = """
 </body>
 </html>
 """
+
 def extract_text_from_pdf(file):
     try:
-        # 1. Try reading it as a normal digital text PDF
+        # 1. Try reading it as a digital text PDF
         reader = PyPDF2.PdfReader(file)
         text = ""
         for page in reader.pages:
@@ -48,12 +48,11 @@ def extract_text_from_pdf(file):
             if extracted:
                 text += extracted + "\n"
         
-        # If it found digital text, return it!
         if text.strip():
             return text
             
-        # 2. If text is empty, it must be a scanned image! Let's use OCR.
-        file.seek(0) # Reset the file reader back to the beginning
+        # 2. Fallback to OCR for handwritten/scanned images
+        file.seek(0)
         pdf_bytes = file.read()
         images = convert_from_bytes(pdf_bytes)
         
@@ -76,11 +75,8 @@ def index():
         if not student_file or not key_file:
             result = "Error: Missing files."
         else:
-            # Extract text
             student_text = extract_text_from_pdf(student_file)
             key_text = extract_text_from_pdf(key_file)
-            
-            # Send to OpenRouter AI
             result = grade_demo(student_text, key_text)
 
     return render_template_string(HTML, result=result)
