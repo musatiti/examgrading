@@ -1,4 +1,5 @@
 import os
+import time
 from openai import OpenAI
 
 def grade_demo(student_images, key_images):
@@ -59,17 +60,25 @@ FINAL SCORE: [Total Points Earned] / [Total Possible Points]
             "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
         })
 
-    # 4. Use the API inside a safety block
-    try:
-        # Hardcoding the powerful, consistent Gemini 2.0 Flash Experimental model (100% Free)
-        response = client.chat.completions.create(
-            model="google/gemma-3-27b-it:free", 
-            messages=[{"role": "user", "content": content_array}]
-        )
-        
-        final_answer = response.choices[0].message.content if response.choices[0].message.content else "No response generated."
-        return f"FINAL GRADE & FEEDBACK:\n{final_answer}"
-        
-    except Exception as e:
-        # If the API crashes or times out, display the error on the screen cleanly
-        return f"API ERROR ENCOUNTERED:\n{str(e)}\n\nPlease try again."
+    # 4. Use the API with Automatic Retry Logic for Rate Limits
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model="google/gemma-3-27b-it:free", 
+                messages=[{"role": "user", "content": content_array}]
+            )
+            
+            final_answer = response.choices[0].message.content if response.choices[0].message.content else "No response generated."
+            return f"FINAL GRADE & FEEDBACK:\n{final_answer}"
+            
+        except Exception as e:
+            error_msg = str(e)
+            
+            # If we hit a 429 Rate Limit, wait 5 seconds and try again quietly
+            if "429" in error_msg and attempt < max_retries - 1:
+                time.sleep(5) 
+                continue # Loops back to the top of the 'for' loop to try again
+                
+            # If it failed 3 times or is a different error entirely, show it to the user
+            return f"API ERROR ENCOUNTERED (Attempt {attempt + 1}/{max_retries}):\n{error_msg}\n\nPlease try again later."
