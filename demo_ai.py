@@ -10,7 +10,7 @@ def grade_demo(student_images, key_images):
         timeout=300.0, 
     )
 
- 
+    # 1. Start the message with our text instructions
     content_array = [
         {
             "type": "text", 
@@ -18,7 +18,7 @@ def grade_demo(student_images, key_images):
         }
     ]
     
-   
+    # 2. Attach all pages of the Answer Key as images
     content_array.append({"type": "text", "text": "--- START OF ANSWER KEY ---"})
     for b64_img in key_images:
         content_array.append({
@@ -26,7 +26,7 @@ def grade_demo(student_images, key_images):
             "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
         })
         
-  
+    # 3. Attach all pages of the Student Work as images
     content_array.append({"type": "text", "text": "--- START OF STUDENT WORK ---"})
     for b64_img in student_images:
         content_array.append({
@@ -34,9 +34,9 @@ def grade_demo(student_images, key_images):
             "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
         })
 
-
+    # 4. Use the universal Free auto-router!
     response = client.chat.completions.create(
-        model="google/gemini-2.0-flash-lite-preview-02-05:free",
+        model="openrouter/free",
         messages=[{"role": "user", "content": content_array}]
     )
     
