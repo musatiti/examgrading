@@ -3,82 +3,79 @@ import time
 from openai import OpenAI
 
 def grade_demo(student_images, key_images):
-    # Grab the key securely from the Docker environment
     api_key = os.getenv("OPENROUTER_API_KEY")
-    
-    # Initialize the OpenRouter client with a 5-minute safety timeout
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=api_key,
         timeout=300.0, 
     )
 
-    # The hyper-strict, tunnel-vision prompt
-    system_prompt = """You are a highly precise, universal AI examiner. You are grading a student's handwritten exam based on a provided answer key.
+    model_id = "google/gemma-3-27b-it:free"
 
-CRITICAL GRADING RULES:
-1. STRICT SPATIAL AWARENESS (FINAL ANSWER ZONES ONLY): You MUST locate the official designated answer areas (e.g., the 'Answers table' at the bottom of a page, or specific drawn boxes/blanks for logic). YOU MUST ONLY GRADE WHAT IS WRITTEN INSIDE THESE SPECIFIC BOXES. Completely ignore all scratchpad work, margin notes, crossed-out text, or circles drawn on the question text itself. If the official answer table/box is empty, the answer is BLANK, even if there are scribbles elsewhere on the page.
-2. EXAM HIERARCHY: You must map the exam structure perfectly. Pay strict attention to "Sections" (e.g., Q1) versus "Sub-questions" (e.g., 1, 2, 3). Do NOT mix questions from different sections together.
-3. POINT WEIGHT DISTRIBUTION: If a Section Header says "(15 points)" and contains 10 sub-questions, you MUST divide the points equally (1.5 pts each).
-4. ANTI-HALLUCINATION: Do NOT guess. If the handwriting inside the final answer box is completely illegible, state "BLANK/ILLEGIBLE" and award 0 points. 
-5. PARTIAL CREDIT: If a question requires a drawing or multi-step math equation in a large box, evaluate the components. Award PARTIAL points if some elements are correct but others are missing.
+    # ==========================================
+    # PHASE 1: EXTRACT THE ANSWER KEY ONLY
+    # ==========================================
+    key_prompt = """You are an expert examiner. Look at the attached Answer Key images.
+    Extract every correct answer into a clean, numbered text list. 
+    Note the point values for each section if they are written on the pages.
+    Do NOT grade anything. Just output the pure Answer Key text."""
 
-You MUST strictly follow this exact formatting:
-
-## Step 1: Exam Structure
-(List each Section, how many sub-questions it contains, and the exact point value of each sub-question).
-
-## Step 2: Question-by-Question Grading
-(Group your grading by Section. For EVERY question provide:)
-* Question: [Section] - [Number]
-* Expected Answer: [Exactly what the key says]
-* Student Answer: [Exactly what the student wrote INSIDE the official answer box/table]
-* Verdict: [CORRECT / INCORRECT / PARTIAL]
-* Points Awarded: [X] / [Y] pts
-
-## Step 3: Final Score Calculation
-(Show your addition)
-FINAL SCORE: [Total Points Earned] / [Total Possible Points]
-"""
-
-    # 1. Start the message with our text instructions
-    content_array = [{"type": "text", "text": system_prompt}]
-    
-    # 2. Attach all pages of the Answer Key as images
-    content_array.append({"type": "text", "text": "--- START OF ANSWER KEY IMAGES ---"})
+    key_content = [{"type": "text", "text": key_prompt}]
     for b64_img in key_images:
-        content_array.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
-        })
-        
-    # 3. Attach all pages of the Student Work as images
-    content_array.append({"type": "text", "text": "--- START OF STUDENT WORK IMAGES ---"})
-    for b64_img in student_images:
-        content_array.append({
+        key_content.append({
             "type": "image_url",
             "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
         })
 
-    # 4. Use the API with Automatic Retry Logic for Rate Limits
+    try:
+        print("Extracting Answer Key...")
+        key_response = client.chat.completions.create(
+            model=model_id, 
+            messages=[{"role": "user", "content": key_content}]
+        )
+        extracted_key_text = key_response.choices[0].message.content
+    except Exception as e:
+        return f"API ERROR DURING KEY EXTRACTION:\n{str(e)}"
+
+    # ==========================================
+    # PHASE 2: GRADE THE STUDENT EXAM ONLY
+    # ==========================================
+    grading_prompt = f"""You are a strict AI examiner. 
+    
+    Here is the official Answer Key text:
+    ---
+    {extracted_key_text}
+    ---
+
+    CRITICAL GRADING RULES:
+    1. Look at the attached Student Exam images. ONLY read answers from the official answer boxes/tables. Ignore scratchpad notes.
+    2. Compare the student's written answer to the official Answer Key text provided above.
+    3. DO NOT hallucinate. If the student wrote something different than the key, mark it INCORRECT. If the box is empty or illegible, mark it BLANK (0 points).
+    
+    Output the final grade question-by-question, followed by the FINAL SCORE."""
+
+    student_content = [{"type": "text", "text": grading_prompt}]
+    for b64_img in student_images:
+        student_content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+        })
+
+    # Retry logic for the grading phase
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            response = client.chat.completions.create(
-                model="google/gemma-3-27b-it:free", 
-                messages=[{"role": "user", "content": content_array}]
+            print(f"Grading Student Exam (Attempt {attempt + 1})...")
+            final_response = client.chat.completions.create(
+                model=model_id, 
+                messages=[{"role": "user", "content": student_content}]
             )
             
-            final_answer = response.choices[0].message.content if response.choices[0].message.content else "No response generated."
-            return f"FINAL GRADE & FEEDBACK:\n{final_answer}"
+            final_grade = final_response.choices[0].message.content if final_response.choices[0].message.content else "No response generated."
+            return f"PHASE 1 (EXTRACTED KEY):\n{extracted_key_text}\n\n=========================\n\nPHASE 2 (FINAL GRADE & FEEDBACK):\n{final_grade}"
             
         except Exception as e:
-            error_msg = str(e)
-            
-            # If we hit a 429 Rate Limit, wait 5 seconds and try again quietly
-            if "429" in error_msg and attempt < max_retries - 1:
+            if "429" in str(e) and attempt < max_retries - 1:
                 time.sleep(5) 
-                continue # Loops back to the top of the 'for' loop to try again
-                
-            # If it failed 3 times or is a different error entirely, show it to the user
-            return f"API ERROR ENCOUNTERED (Attempt {attempt + 1}/{max_retries}):\n{error_msg}\n\nPlease try again later."
+                continue 
+            return f"API ERROR DURING GRADING:\n{str(e)}\n\nPlease try again later."
