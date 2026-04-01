@@ -50,7 +50,7 @@ def grade_demo(student_images, key_images):
     # ==========================================
     # PHASE 2: GRADE THE STUDENT EXAM ONLY
     # ==========================================
-    grading_prompt = f"""You are a strict AI examiner. 
+    grading_prompt = f"""You are a strict, literal AI examiner. 
     
     Here is the official Answer Key text:
     ---
@@ -58,13 +58,22 @@ def grade_demo(student_images, key_images):
     ---
 
     CRITICAL GRADING RULES:
-    1. STRICT SPATIAL AWARENESS: Look at the attached Student Exam images. YOU MUST ONLY GRADE WHAT IS WRITTEN INSIDE OFFICIAL ANSWER BOXES/TABLES. Completely ignore scratchpad work, margin notes, crossed-out text, or circles drawn on the question text itself.
-    2. Compare the student's written answer to the official Answer Key text provided above.
-    3. ANTI-HALLUCINATION: DO NOT guess. If the student wrote something different than the key, mark it INCORRECT. If the official answer box is empty or illegible, mark it BLANK (0 points) even if there is work elsewhere on the page.
-    4. POINT WEIGHTS: Use the point values from the key. If a section is worth 15 points and has 10 questions, each is 1.5 points.
+    1. STRICT SPATIAL AWARENESS: Look at the attached Student Exam images. YOU MUST ONLY GRADE WHAT IS WRITTEN INSIDE OFFICIAL ANSWER BOXES/TABLES. 
+    2. MANDATORY COMPARISON: You are forbidden from giving a verdict without explicitly printing the Key's answer and the Student's answer right next to each other first. If they do not match exactly, you MUST mark it INCORRECT.
+    3. ANTI-HALLUCINATION: If the official answer box is empty or illegible, mark it BLANK (0 points).
     
-    Output the final grade question-by-question, grouped by section, followed by the FINAL SCORE calculation."""
-
+    YOU MUST USE THIS EXACT TEMPLATE FOR EVERY SINGLE QUESTION. DO NOT DEVIATE:
+    
+    * Question: [Number]
+    * Key Says: [Exactly what Phase 1 extracted]
+    * Student Wrote: [Exactly what is in the box]
+    * Verdict: [CORRECT / INCORRECT / PARTIAL / BLANK]
+    * Points: [X] / [Y]
+    * Reasoning: [Explain why they match or fail]
+    
+    End with:
+    FINAL SCORE: [Total Earned] / [Total Possible]
+    """
     student_content = [{"type": "text", "text": grading_prompt}]
     for b64_img in student_images:
         student_content.append({
