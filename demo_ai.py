@@ -2,15 +2,17 @@ import os
 from openai import OpenAI
 
 def grade_demo(student_images, key_images):
+    # Grab the key securely from the Docker environment
     api_key = os.getenv("OPENROUTER_API_KEY")
     
+    # Initialize the OpenRouter client with a 5-minute safety timeout
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=api_key,
         timeout=300.0, 
     )
 
-    # 1. The Magic: A strict, step-by-step Chain of Thought prompt
+    # The strict, hallucination-proof prompt
     system_prompt = """You are a highly precise, universal AI examiner. You are grading a student's handwritten exam based on a provided answer key.
 
 CRITICAL GRADING RULES:
@@ -38,8 +40,10 @@ You MUST strictly follow this exact formatting:
 FINAL SCORE: [Total Points Earned] / [Total Possible Points]
 """
 
+    # 1. Start the message with our text instructions
     content_array = [{"type": "text", "text": system_prompt}]
     
+    # 2. Attach all pages of the Answer Key as images
     content_array.append({"type": "text", "text": "--- START OF ANSWER KEY IMAGES ---"})
     for b64_img in key_images:
         content_array.append({
@@ -47,6 +51,7 @@ FINAL SCORE: [Total Points Earned] / [Total Possible Points]
             "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
         })
         
+    # 3. Attach all pages of the Student Work as images
     content_array.append({"type": "text", "text": "--- START OF STUDENT WORK IMAGES ---"})
     for b64_img in student_images:
         content_array.append({
@@ -54,11 +59,17 @@ FINAL SCORE: [Total Points Earned] / [Total Possible Points]
             "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
         })
 
-    response = client.chat.completions.create(
-        model="openrouter/free",
-        messages=[{"role": "user", "content": content_array}]
-    )
-    
-    final_answer = response.choices[0].message.content if response.choices[0].message.content else "No response generated."
+    # 4. Use the API inside a safety block
+    try:
+        # Hardcoding the powerful, consistent Gemini 2.0 Flash Experimental model (100% Free)
+        response = client.chat.completions.create(
+            model="google/gemini-2.0-flash-exp:free", 
+            messages=[{"role": "user", "content": content_array}]
+        )
         
-    return final_answer
+        final_answer = response.choices[0].message.content if response.choices[0].message.content else "No response generated."
+        return f"FINAL GRADE & FEEDBACK:\n{final_answer}"
+        
+    except Exception as e:
+        # If the API crashes or times out, display the error on the screen cleanly
+        return f"API ERROR ENCOUNTERED:\n{str(e)}\n\nPlease try again."
