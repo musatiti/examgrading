@@ -11,6 +11,7 @@ def grade_demo(student_images, key_images):
     )
 
     model_id = "google/gemma-3-27b-it:free"
+    max_retries = 3
 
     # ==========================================
     # PHASE 1: EXTRACT THE ANSWER KEY ONLY
@@ -27,15 +28,24 @@ def grade_demo(student_images, key_images):
             "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
         })
 
-    try:
-        print("Extracting Answer Key...")
-        key_response = client.chat.completions.create(
-            model=model_id, 
-            messages=[{"role": "user", "content": key_content}]
-        )
-        extracted_key_text = key_response.choices[0].message.content
-    except Exception as e:
-        return f"API ERROR DURING KEY EXTRACTION:\n{str(e)}"
+    extracted_key_text = ""
+    
+    # Retry Loop for Phase 1
+    for attempt in range(max_retries):
+        try:
+            print(f"Extracting Answer Key (Attempt {attempt + 1})...")
+            key_response = client.chat.completions.create(
+                model=model_id, 
+                messages=[{"role": "user", "content": key_content}]
+            )
+            extracted_key_text = key_response.choices[0].message.content
+            break  # It worked! Break out of the retry loop and move to Phase 2
+            
+        except Exception as e:
+            if "429" in str(e) and attempt < max_retries - 1:
+                time.sleep(5) # Wait 5 seconds and try again
+                continue
+            return f"API ERROR DURING KEY EXTRACTION:\n{str(e)}\n\nPlease try again later."
 
     # ==========================================
     # PHASE 2: GRADE THE STUDENT EXAM ONLY
@@ -48,11 +58,12 @@ def grade_demo(student_images, key_images):
     ---
 
     CRITICAL GRADING RULES:
-    1. Look at the attached Student Exam images. ONLY read answers from the official answer boxes/tables. Ignore scratchpad notes.
+    1. STRICT SPATIAL AWARENESS: Look at the attached Student Exam images. YOU MUST ONLY GRADE WHAT IS WRITTEN INSIDE OFFICIAL ANSWER BOXES/TABLES. Completely ignore scratchpad work, margin notes, crossed-out text, or circles drawn on the question text itself.
     2. Compare the student's written answer to the official Answer Key text provided above.
-    3. DO NOT hallucinate. If the student wrote something different than the key, mark it INCORRECT. If the box is empty or illegible, mark it BLANK (0 points).
+    3. ANTI-HALLUCINATION: DO NOT guess. If the student wrote something different than the key, mark it INCORRECT. If the official answer box is empty or illegible, mark it BLANK (0 points) even if there is work elsewhere on the page.
+    4. POINT WEIGHTS: Use the point values from the key. If a section is worth 15 points and has 10 questions, each is 1.5 points.
     
-    Output the final grade question-by-question, followed by the FINAL SCORE."""
+    Output the final grade question-by-question, grouped by section, followed by the FINAL SCORE calculation."""
 
     student_content = [{"type": "text", "text": grading_prompt}]
     for b64_img in student_images:
@@ -61,8 +72,7 @@ def grade_demo(student_images, key_images):
             "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
         })
 
-    # Retry logic for the grading phase
-    max_retries = 3
+    # Retry Loop for Phase 2
     for attempt in range(max_retries):
         try:
             print(f"Grading Student Exam (Attempt {attempt + 1})...")
