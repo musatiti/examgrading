@@ -1,27 +1,45 @@
 import os
 from openai import OpenAI
 
-def grade_demo(student_text, key_text):
-    # Grab the key securely from the Docker environment
+def grade_demo(student_images, key_images):
     api_key = os.getenv("OPENROUTER_API_KEY")
     
-    # Initialize the OpenRouter client with our 5-minute safety timeout
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=api_key,
         timeout=300.0, 
     )
 
-    # Set up the strict grading instructions
-    prompt = f"You are an expert examiner. Grade this student's handwritten work based on the provided answer key.\n\nANSWER KEY:\n{key_text}\n\nSTUDENT WORK:\n{student_text}\n\nProvide a fair final grade and point out any specific mistakes."
+ 
+    content_array = [
+        {
+            "type": "text", 
+            "text": "You are an expert examiner. Grade the student's work based on the provided answer key. Analyze both text and drawings carefully. \n\nThe first set of images below is the ANSWER KEY. The second set is the STUDENT WORK."
+        }
+    ]
     
-    # Using Arcee AI's massive, under-the-radar model
+   
+    content_array.append({"type": "text", "text": "--- START OF ANSWER KEY ---"})
+    for b64_img in key_images:
+        content_array.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+        })
+        
+  
+    content_array.append({"type": "text", "text": "--- START OF STUDENT WORK ---"})
+    for b64_img in student_images:
+        content_array.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+        })
+
+
     response = client.chat.completions.create(
-        model="arcee-ai/trinity-large-preview:free",
-        messages=[{"role": "user", "content": prompt}]
+        model="google/gemini-2.0-flash-lite-preview-02-05:free",
+        messages=[{"role": "user", "content": content_array}]
     )
     
-    # Extract the AI's response safely
     final_answer = response.choices[0].message.content if response.choices[0].message.content else "No response generated."
         
-    return f"TRINITY AI GRADING:\n{final_answer}"
+    return f"FINAL GRADE & FEEDBACK:\n{final_answer}"

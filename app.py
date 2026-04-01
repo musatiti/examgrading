@@ -1,6 +1,6 @@
 from flask import Flask, request, render_template_string
-import PyPDF2
-import pytesseract
+import base64
+from io import BytesIO
 from pdf2image import convert_from_bytes
 from demo_ai import grade_demo
 
@@ -10,7 +10,7 @@ HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-  <title>AI Exam Grader</title>
+  <title>AI Exam Grader (Vision Edition)</title>
   <style>
     body { font-family: Arial; margin: 30px; line-height: 1.6; }
     button { padding: 10px 15px; cursor: pointer; }
@@ -27,7 +27,7 @@ HTML = """
     <label>Answer Key (PDF):</label><br>
     <input type="file" name="key" required><br><br>
 
-    <button type="submit">Grade with AI</button>
+    <button type="submit">Grade with Vision AI</button>
   </form>
 
   {% if result %}
@@ -38,32 +38,24 @@ HTML = """
 </html>
 """
 
-def extract_text_from_pdf(file):
+def pdf_to_base64_images(file):
     try:
-        # 1. Try reading it as a digital text PDF
-        reader = PyPDF2.PdfReader(file)
-        text = ""
-        for page in reader.pages:
-            extracted = page.extract_text()
-            if extracted:
-                text += extracted + "\n"
-        
-        if text.strip():
-            return text
-            
-        # 2. Fallback to OCR for handwritten/scanned images
         file.seek(0)
         pdf_bytes = file.read()
+        # Convert PDF pages directly to images
         images = convert_from_bytes(pdf_bytes)
         
-        ocr_text = ""
-        for image in images:
-            ocr_text += pytesseract.image_to_string(image) + "\n"
+        base64_images = []
+        for img in images:
+            buffered = BytesIO()
+            img.save(buffered, format="JPEG")
+            img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            base64_images.append(img_str)
             
-        return ocr_text
-        
+        return base64_images
     except Exception as e:
-        return f"Error reading PDF: {str(e)}"
+        print(f"Error converting PDF: {str(e)}")
+        return []
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -75,9 +67,13 @@ def index():
         if not student_file or not key_file:
             result = "Error: Missing files."
         else:
-            student_text = extract_text_from_pdf(student_file)
-            key_text = extract_text_from_pdf(key_file)
-            result = grade_demo(student_text, key_text)
+            student_images = pdf_to_base64_images(student_file)
+            key_images = pdf_to_base64_images(key_file)
+            
+            if not student_images or not key_images:
+                result = "Error: Could not convert PDFs to images."
+            else:
+                result = grade_demo(student_images, key_images)
 
     return render_template_string(HTML, result=result)
 
