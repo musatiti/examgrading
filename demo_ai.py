@@ -63,7 +63,7 @@ FINAL SCORE: [Total Points Earned] / [Total Possible Points]
     try:
         # Hardcoding the powerful, consistent Gemini 2.0 Flash Experimental model (100% Free)
         response = client.chat.completions.create(
-            model="google/gemini-2.0-flash-exp:free", 
+            model="meta-llama/llama-3.2-90b-vision-instruct:free", 
             messages=[{"role": "user", "content": content_array}]
         )
         
