@@ -44,7 +44,7 @@ def pdf_to_base64_images(file):
         pdf_bytes = file.read()
         
         # FIX: We added dpi=300 to make the images high-definition!
-        images = convert_from_bytes(pdf_bytes, dpi=300)
+        images = convert_from_bytes(pdf_bytes, dpi=100)
         
         base64_images = []
         for img in images:
