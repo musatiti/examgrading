@@ -3,14 +3,18 @@ import time
 from openai import OpenAI
 
 def grade_demo(student_images, key_images):
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    # Grab your NEW key from Google AI Studio
+    api_key = os.getenv("GEMINI_API_KEY") 
+    
+    # Connect directly to Google's servers instead of OpenRouter
     client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
         api_key=api_key,
         timeout=300.0, 
     )
 
-    model_id = "google/gemma-3-27b-it:free"
+    # Use Google's official, highly capable vision model
+    model_id = "gemini-2.0-flash" 
     max_retries = 3
 
     # ==========================================
