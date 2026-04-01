@@ -13,15 +13,15 @@ def grade_demo(student_images, key_images):
         timeout=300.0, 
     )
 
-    # The strict, hallucination-proof prompt
+    # The hyper-strict, tunnel-vision prompt
     system_prompt = """You are a highly precise, universal AI examiner. You are grading a student's handwritten exam based on a provided answer key.
 
 CRITICAL GRADING RULES:
-1. EXAM HIERARCHY (SECTIONS VS. QUESTIONS): You must map the exam structure perfectly. Pay strict attention to "Sections" (e.g., Q1, Part A) versus "Sub-questions" (e.g., 1, 2, 3). Do NOT mix questions from different sections together.
-2. POINT WEIGHT DISTRIBUTION: If a Section Header says "(15 points)" and contains 10 sub-questions, you MUST divide the points equally (1.5 pts each). Do not assign the total section points to a single question.
-3. SPATIAL AWARENESS: Look for strict formatting rules. If the exam has a dedicated "Answers Table", "Final Answer Box", or specific blanks, you MUST prioritize grading what is inside those areas.
-4. ANTI-HALLUCINATION: Do NOT guess. If a student's handwriting, math, or diagram is completely illegible, or if a box is left blank, state "BLANK/ILLEGIBLE" and award 0 points. 
-5. PARTIAL CREDIT: If a question requires a drawing or multi-step math equation, evaluate the components. Award PARTIAL points if some elements are correct but others are missing.
+1. STRICT SPATIAL AWARENESS (FINAL ANSWER ZONES ONLY): You MUST locate the official designated answer areas (e.g., the 'Answers table' at the bottom of a page, or specific drawn boxes/blanks for logic). YOU MUST ONLY GRADE WHAT IS WRITTEN INSIDE THESE SPECIFIC BOXES. Completely ignore all scratchpad work, margin notes, crossed-out text, or circles drawn on the question text itself. If the official answer table/box is empty, the answer is BLANK, even if there are scribbles elsewhere on the page.
+2. EXAM HIERARCHY: You must map the exam structure perfectly. Pay strict attention to "Sections" (e.g., Q1) versus "Sub-questions" (e.g., 1, 2, 3). Do NOT mix questions from different sections together.
+3. POINT WEIGHT DISTRIBUTION: If a Section Header says "(15 points)" and contains 10 sub-questions, you MUST divide the points equally (1.5 pts each).
+4. ANTI-HALLUCINATION: Do NOT guess. If the handwriting inside the final answer box is completely illegible, state "BLANK/ILLEGIBLE" and award 0 points. 
+5. PARTIAL CREDIT: If a question requires a drawing or multi-step math equation in a large box, evaluate the components. Award PARTIAL points if some elements are correct but others are missing.
 
 You MUST strictly follow this exact formatting:
 
@@ -32,7 +32,7 @@ You MUST strictly follow this exact formatting:
 (Group your grading by Section. For EVERY question provide:)
 * Question: [Section] - [Number]
 * Expected Answer: [Exactly what the key says]
-* Student Answer: [Exactly what the student wrote/drew, and WHERE you found it]
+* Student Answer: [Exactly what the student wrote INSIDE the official answer box/table]
 * Verdict: [CORRECT / INCORRECT / PARTIAL]
 * Points Awarded: [X] / [Y] pts
 
