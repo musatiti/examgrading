@@ -3,18 +3,18 @@ import time
 from openai import OpenAI
 
 def grade_demo(student_images, key_images):
-    # Grab your NEW key from Google AI Studio
-    api_key = os.getenv("GEMINI_API_KEY") 
+    # Grab the key securely from the Docker environment
+    api_key = os.getenv("OPENROUTER_API_KEY")
     
-    # Connect directly to Google's servers instead of OpenRouter
+    # Initialize the OpenRouter client with a 5-minute safety timeout
     client = OpenAI(
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        base_url="https://openrouter.ai/api/v1",
         api_key=api_key,
         timeout=300.0, 
     )
 
-    # Use Google's official, highly capable vision model
-    model_id = "gemini-2.0-flash" 
+    # Using Alibaba's Qwen 2.5 72B - Exceptional at reading tables and messy handwriting
+    model_id = "qwen/qwen-2.5-vl-72b-instruct:free"
     max_retries = 3
 
     # ==========================================
@@ -62,22 +62,24 @@ def grade_demo(student_images, key_images):
     ---
 
     CRITICAL GRADING RULES:
-    1. STRICT SPATIAL AWARENESS: Look at the attached Student Exam images. YOU MUST ONLY GRADE WHAT IS WRITTEN INSIDE OFFICIAL ANSWER BOXES/TABLES. 
+    1. STRICT SPATIAL AWARENESS: Look at the attached Student Exam images. YOU MUST ONLY GRADE WHAT IS WRITTEN INSIDE OFFICIAL ANSWER BOXES/TABLES. Completely ignore scratchpad work, margin notes, crossed-out text, or circles drawn on the question text itself.
     2. MANDATORY COMPARISON: You are forbidden from giving a verdict without explicitly printing the Key's answer and the Student's answer right next to each other first. If they do not match exactly, you MUST mark it INCORRECT.
-    3. ANTI-HALLUCINATION: If the official answer box is empty or illegible, mark it BLANK (0 points).
+    3. ANTI-HALLUCINATION: DO NOT guess. If the official answer box is empty or illegible, mark it BLANK (0 points) even if there is work elsewhere on the page.
+    4. POINT WEIGHTS: Use the point values from the key. If a section is worth 15 points and has 10 questions, each is 1.5 points.
     
     YOU MUST USE THIS EXACT TEMPLATE FOR EVERY SINGLE QUESTION. DO NOT DEVIATE:
     
-    * Question: [Number]
+    * Question: [Section] - [Number]
     * Key Says: [Exactly what Phase 1 extracted]
     * Student Wrote: [Exactly what is in the box]
     * Verdict: [CORRECT / INCORRECT / PARTIAL / BLANK]
     * Points: [X] / [Y]
-    * Reasoning: [Explain why they match or fail]
+    * Reasoning: [Explain why they match or fail based strictly on the visual evidence]
     
     End with:
     FINAL SCORE: [Total Earned] / [Total Possible]
     """
+
     student_content = [{"type": "text", "text": grading_prompt}]
     for b64_img in student_images:
         student_content.append({
