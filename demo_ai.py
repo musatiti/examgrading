@@ -13,8 +13,8 @@ def grade_demo(student_images, key_images):
         timeout=300.0, 
     )
 
-    # Using Alibaba's Qwen 2.5 72B - Exceptional at reading tables and messy handwriting
-    model_id = "qwen/qwen3.6-plus:free"
+    # Using your requested NVIDIA Nemotron model
+    model_id = "nvidia/nemotron-3-nano-30b-a3b:free"
     max_retries = 3
 
     # ==========================================
@@ -93,11 +93,22 @@ def grade_demo(student_images, key_images):
             print(f"Grading Student Exam (Attempt {attempt + 1})...")
             final_response = client.chat.completions.create(
                 model=model_id, 
-                messages=[{"role": "user", "content": student_content}]
+                messages=[{"role": "user", "content": student_content}],
+                extra_body={"reasoning": {"enabled": True}} # Force AI to expose its thought process
             )
             
-            final_grade = final_response.choices[0].message.content if final_response.choices[0].message.content else "No response generated."
-            return f"PHASE 1 (EXTRACTED KEY):\n{extracted_key_text}\n\n=========================\n\nPHASE 2 (FINAL GRADE & FEEDBACK):\n{final_grade}"
+            message_obj = final_response.choices[0].message
+            final_grade = message_obj.content if message_obj.content else "No response generated."
+            
+            # Extract the AI's internal reasoning safely
+            ai_thoughts = "No internal reasoning provided by this model."
+            if hasattr(message_obj, 'reasoning_details') and message_obj.reasoning_details:
+                if isinstance(message_obj.reasoning_details, dict):
+                    ai_thoughts = message_obj.reasoning_details.get('text', str(message_obj.reasoning_details))
+                else:
+                    ai_thoughts = str(message_obj.reasoning_details)
+
+            return f"PHASE 1 (EXTRACTED KEY):\n{extracted_key_text}\n\n=========================\n\nAI'S INTERNAL THOUGHTS:\n{ai_thoughts}\n\n=========================\n\nPHASE 2 (FINAL GRADE & FEEDBACK):\n{final_grade}"
             
         except Exception as e:
             if "429" in str(e) and attempt < max_retries - 1:
