@@ -2,16 +2,15 @@ import time
 from openai import OpenAI
 
 def grade_demo(student_images, key_images):
-    # Connect directly to your local Ollama instance running on your PC
-    # 'host.docker.internal' is the bridge that lets Docker talk to Windows/Mac
+   
     client = OpenAI(
         base_url="http://host.docker.internal:11434/v1",
         api_key="ollama-local", # Required by the library, but Ollama ignores it
         timeout=300.0, 
     )
 
-    # Using the lightweight Moondream vision model we just downloaded
-    model_id = "moondream"
+   
+    model_id = "llava"
     max_retries = 3
 
     # ==========================================
@@ -31,7 +30,7 @@ def grade_demo(student_images, key_images):
 
     extracted_key_text = ""
     
-    # Retry Loop for Phase 1
+   
     for attempt in range(max_retries):
         try:
             print(f"Extracting Answer Key (Attempt {attempt + 1})...")
@@ -81,7 +80,7 @@ def grade_demo(student_images, key_images):
             "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
         })
 
-    # Retry Loop for Phase 2
+  
     for attempt in range(max_retries):
         try:
             print(f"Grading Student Exam (Attempt {attempt + 1})...")
