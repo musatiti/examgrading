@@ -14,7 +14,7 @@ def grade_demo(student_images, key_images):
     )
 
     # Using Alibaba's Qwen 2.5 72B - Exceptional at reading tables and messy handwriting
-    model_id = "qwen/qwen-2.5-vl-72b-instruct:free"
+    model_id = "qwen/qwen-3.6-plus:free"
     max_retries = 3
 
     # ==========================================
