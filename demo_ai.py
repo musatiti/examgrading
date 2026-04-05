@@ -62,9 +62,9 @@ def grade_demo(student_images, key_images):
     ---
 
     CRITICAL GRADING RULES:
-    1. STRICT SPATIAL AWARENESS: Look at the attached Student Exam images. YOU MUST ONLY GRADE WHAT IS WRITTEN INSIDE OFFICIAL ANSWER BOXES/TABLES. Completely ignore scratchpad work, margin notes, crossed-out text, or circles drawn on the question text itself.
-    2. MANDATORY COMPARISON: You are forbidden from giving a verdict without explicitly printing the Key's answer and the Student's answer right next to each other first. If they do not match exactly, you MUST mark it INCORRECT.
-    3. ANTI-HALLUCINATION: DO NOT guess. If the official answer box is empty or illegible, mark it BLANK (0 points) even if there is work elsewhere on the page.
+    1. STRICT SPATIAL AWARENESS: Look at the attached Student Exam images. YOU MUST ONLY GRADE WHAT IS WRITTEN INSIDE OFFICIAL ANSWER BOXES/TABLES. 
+    2. ANTI-CHEATING (IGNORE PREVIOUS GRADES): This exam image may already have red ink, checkmarks, X's, or scores written on it by a human teacher. YOU MUST COMPLETELY IGNORE THESE. Do not read scores (like "10.5" or "13") off the margins to deduce answers. Grade purely on the raw student text.
+    3. MANDATORY COMPARISON: You are forbidden from giving a verdict without explicitly printing the Key's answer and the Student's answer right next to each other first. If they do not match exactly, you MUST mark it INCORRECT.
     4. POINT WEIGHTS: Use the point values from the key. If a section is worth 15 points and has 10 questions, each is 1.5 points.
     
     YOU MUST USE THIS EXACT TEMPLATE FOR EVERY SINGLE QUESTION. DO NOT DEVIATE:
@@ -74,7 +74,7 @@ def grade_demo(student_images, key_images):
     * Student Wrote: [Exactly what is in the box]
     * Verdict: [CORRECT / INCORRECT / PARTIAL / BLANK]
     * Points: [X] / [Y]
-    * Reasoning: [Explain why they match or fail based strictly on the visual evidence]
+    * Reasoning: [Maximum 1 short sentence. DO NOT include your math calculations here.]
     
     End with:
     FINAL SCORE: [Total Earned] / [Total Possible]
@@ -100,13 +100,17 @@ def grade_demo(student_images, key_images):
             message_obj = final_response.choices[0].message
             final_grade = message_obj.content if message_obj.content else "No response generated."
             
-            # Extract the AI's internal reasoning safely
+            # Extract the AI's internal reasoning safely# Extract the AI's internal reasoning safely
             ai_thoughts = "No internal reasoning provided by this model."
             if hasattr(message_obj, 'reasoning_details') and message_obj.reasoning_details:
-                if isinstance(message_obj.reasoning_details, dict):
-                    ai_thoughts = message_obj.reasoning_details.get('text', str(message_obj.reasoning_details))
+                details = message_obj.reasoning_details
+                # Qwen often returns a list of dictionaries, we need to catch it
+                if isinstance(details, list) and len(details) > 0 and isinstance(details[0], dict):
+                    ai_thoughts = details[0].get('text', str(details))
+                elif isinstance(details, dict):
+                    ai_thoughts = details.get('text', str(details))
                 else:
-                    ai_thoughts = str(message_obj.reasoning_details)
+                    ai_thoughts = str(details)
 
             return f"PHASE 1 (EXTRACTED KEY):\n{extracted_key_text}\n\n=========================\n\nAI'S INTERNAL THOUGHTS:\n{ai_thoughts}\n\n=========================\n\nPHASE 2 (FINAL GRADE & FEEDBACK):\n{final_grade}"
             
