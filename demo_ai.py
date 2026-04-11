@@ -14,7 +14,7 @@ def grade_demo(student_images, key_images):
     )
 
     # THE ROULETTE WHEEL: Automatically picks the fastest available free vision model
-    model_id = "openrouter/free"
+    model_id = "nvidia/nemotron-nano-12b-v2-vl:free"
     max_retries = 3
 
     # ==========================================
