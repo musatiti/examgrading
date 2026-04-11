@@ -27,9 +27,9 @@ def grade_demo(student_images, key_images):
     2. The Student's Exam.
 
     CRITICAL GRADING RULES:
-    1. DIRECT VISUAL COMPARISON: Look directly at the drawings, diagrams, circuits, and handwritten answers in the Student Exam and compare them visually to the Answer Key. Do they match in shape, logic, and content?
+    1. DIRECT VISUAL COMPARISON: Look directly and carefully at the handwritten, drawings, diagrams, and circuits answers in the Student Exam and compare them visually to the Answer Key. Do they match in shape, logic, and content?
     2. ANTI-CHEATING (IGNORE RED INK): The student exam may already have grades, scores (like "13" or "10.5"), checkmarks, or red "X"s written on it by a human. YOU MUST COMPLETELY IGNORE THESE. Grade purely on the student's raw pencil/pen work.
-    3. STRICT SPATIAL AWARENESS: Only grade what is inside the official answer boxes or designated drawing areas.
+    3. STRICT SPATIAL AWARENESS: Only grade what is inside the official answer boxes or designated drawing areas, and give markes based on the weight written for each section question.
 
     For EVERY question found in the exam, use this exact template:
     
