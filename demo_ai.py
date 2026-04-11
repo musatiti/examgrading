@@ -13,8 +13,8 @@ def grade_demo(student_images, key_images):
         timeout=300.0, 
     )
 
-    # THE ROULETTE WHEEL: Automatically picks the fastest available free vision model
-    model_id = "nvidia/nemotron-nano-12b-v2-vl:free"
+    # NO MORE ROULETTE. Lock in the smart, proven model.
+    model_id = "qwen/qwen3.6-plus:free"
     max_retries = 3
 
     # ==========================================
@@ -27,9 +27,9 @@ def grade_demo(student_images, key_images):
     2. The Student's Exam.
 
     CRITICAL GRADING RULES:
-    1. DIRECT VISUAL COMPARISON: Look directly and carefully at the handwritten, drawings, diagrams, and circuits answers in the Student Exam and compare them visually to the Answer Key. Do they match in shape, logic, and content?
+    1. DIRECT VISUAL COMPARISON: Look directly at the drawings, diagrams, circuits, and handwritten answers in the Student Exam and compare them visually to the Answer Key. Do they match in shape, logic, and content?
     2. ANTI-CHEATING (IGNORE RED INK): The student exam may already have grades, scores (like "13" or "10.5"), checkmarks, or red "X"s written on it by a human. YOU MUST COMPLETELY IGNORE THESE. Grade purely on the student's raw pencil/pen work.
-    3. STRICT SPATIAL AWARENESS: Only grade what is inside the official answer boxes or designated drawing areas, and give markes based on the weight written for each section question.
+    3. STRICT SPATIAL AWARENESS: Only grade what is inside the official answer boxes or designated drawing areas.
 
     For EVERY question found in the exam, use this exact template:
     
@@ -73,10 +73,7 @@ def grade_demo(student_images, key_images):
             
             final_grade = final_response.choices[0].message.content if final_response.choices[0].message.content else "No response generated."
             
-            # --- THE REVEAL ---
-            # OpenRouter passes the actual model used back in the 'model' attribute
             actual_model = final_response.model
-            
             return f"--- GRADING ENGINE: {actual_model.upper()} ---\n\n{final_grade}"
             
         except Exception as e:
@@ -84,3 +81,4 @@ def grade_demo(student_images, key_images):
                 time.sleep(5) 
                 continue 
             return f"API ERROR DURING GRADING:\n{str(e)}\n\nPlease try again later."
+            
