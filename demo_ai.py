@@ -14,7 +14,7 @@ def grade_demo(student_images, key_images):
     )
 
     # NO MORE ROULETTE. Lock in the smart, proven model.
-    model_id = "google/gemma-4-31b-it:free"
+    model_id = "meta-llama/llama-3.2-11b-vision-instruct:free"
     max_retries = 3
 
     # ==========================================
