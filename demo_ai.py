@@ -17,7 +17,7 @@ def grade_demo(student_images, key_images):
     )
 
     # Locking in OpenAI's top-tier lightweight vision model
-    model_id = "gpt-4o-mini"
+    model_id = "gpt-4o"
     max_retries = 3
 
     # ==========================================
