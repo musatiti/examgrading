@@ -8,7 +8,7 @@ def grade_demo(student_images, key_images):
     # ==========================================
     # Replace "YOUR_GITHUB_TOKEN_HERE" with the github_pat_... token you just generated
     # (Or better yet, set it as an environment variable in your docker-compose.yml!)
-    github_token = os.getenv("GitHub_Modules_token", "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")
+    github_token = os.getenv("GitHub_Modules_token")
     
     client = OpenAI(
         base_url="https://models.inference.ai.azure.com",
