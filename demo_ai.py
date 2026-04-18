@@ -3,18 +3,21 @@ import time
 from openai import OpenAI
 
 def grade_demo(student_images, key_images):
-    # Grab the key securely from the Docker environment
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    # ==========================================
+    # GITHUB MODELS CONNECTION (STABLE & FAST)
+    # ==========================================
+    # Replace "YOUR_GITHUB_TOKEN_HERE" with the github_pat_... token you just generated
+    # (Or better yet, set it as an environment variable in your docker-compose.yml!)
+    github_token = os.getenv("GitHub_Modules_token", "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")
     
-    # Initialize the OpenRouter client
     client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key,
+        base_url="https://models.inference.ai.azure.com",
+        api_key=github_token,
         timeout=300.0, 
     )
 
-    # NO MORE ROULETTE. Lock in the smart, proven model.
-    model_id = "meta-llama/llama-3.2-11b-vision-instruct:free"
+    # Locking in OpenAI's top-tier lightweight vision model
+    model_id = "gpt-4o-mini"
     max_retries = 3
 
     # ==========================================
@@ -65,7 +68,7 @@ def grade_demo(student_images, key_images):
     # Retry Loop
     for attempt in range(max_retries):
         try:
-            print(f"Visually Grading Exam (Attempt {attempt + 1})...")
+            print(f"Visually Grading Exam via GitHub Models (Attempt {attempt + 1})...")
             final_response = client.chat.completions.create(
                 model=model_id, 
                 messages=[{"role": "user", "content": content}]
@@ -78,7 +81,7 @@ def grade_demo(student_images, key_images):
             
         except Exception as e:
             if "429" in str(e) and attempt < max_retries - 1:
+                print("Rate limited, waiting 5 seconds...")
                 time.sleep(5) 
                 continue 
             return f"API ERROR DURING GRADING:\n{str(e)}\n\nPlease try again later."
-            
