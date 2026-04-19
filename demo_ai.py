@@ -3,20 +3,21 @@ import time
 from openai import OpenAI
 
 def grade_demo(student_images, key_images):
-    # ==========================================
-    # GITHUB MODELS CONNECTION (STABLE & FAST)
-    # ==========================================
-    # Replace "YOUR_GITHUB_TOKEN_HERE" with the github_pat_... token you just generated
-    # (Or better yet, set it as an environment variable in your docker-compose.yml!)
-    github_token = os.getenv("GitHub_Modules_token")
+    # Grab the GitHub token securely from the environment
+    github_token = os.getenv("GITHUB_TOKEN")
     
+    # A quick safety check just in case Docker forgets the key
+    if not github_token:
+        return "API ERROR: GITHUB_TOKEN environment variable not found. Please check your .env or export command."
+
+    # Initialize the client for GitHub Models (Azure)
     client = OpenAI(
         base_url="https://models.inference.ai.azure.com",
         api_key=github_token,
         timeout=300.0, 
     )
 
-    # Locking in OpenAI's top-tier lightweight vision model
+    # Using the flagship GPT-4o model for maximum logic and reasoning
     model_id = "gpt-4o"
     max_retries = 3
 
@@ -33,6 +34,18 @@ def grade_demo(student_images, key_images):
     1. DIRECT VISUAL COMPARISON: Look directly at the drawings, diagrams, circuits, and handwritten answers in the Student Exam and compare them visually to the Answer Key. Do they match in shape, logic, and content?
     2. ANTI-CHEATING (IGNORE RED INK): The student exam may already have grades, scores (like "13" or "10.5"), checkmarks, or red "X"s written on it by a human. YOU MUST COMPLETELY IGNORE THESE. Grade purely on the student's raw pencil/pen work.
     3. STRICT SPATIAL AWARENESS: Only grade what is inside the official answer boxes or designated drawing areas.
+    4. LOGIC CHECK: If the Student's answer visually or textually matches the Key, the Verdict MUST be CORRECT. Do not contradict yourself.
+
+    --- TRAINING EXAMPLES (Edge Cases to Watch Out For) ---
+    Example A: The "Don't Care" State
+    If the Answer Key shows S0=X (a "don't care" state), and the student wrote S0=0 or S0=1, mark it CORRECT.
+
+    Example B: Partial Drawing Matches
+    If the Answer Key shows a full adder with a carry-out wire, and the student drew the full adder but forgot the final carry-out wire, mark it INCORRECT. Close is not enough.
+
+    Example C: Illegible Handwriting
+    If you cannot definitively read the student's handwriting, mark it PARTIAL and explicitly state "Handwriting illegible" in the Reasoning.
+    -------------------------------------------------------
 
     For EVERY question found in the exam, use this exact template:
     
@@ -68,7 +81,7 @@ def grade_demo(student_images, key_images):
     # Retry Loop
     for attempt in range(max_retries):
         try:
-            print(f"Visually Grading Exam via GitHub Models (Attempt {attempt + 1})...")
+            print(f"Visually Grading Exam via GitHub Models ({model_id}) (Attempt {attempt + 1})...")
             final_response = client.chat.completions.create(
                 model=model_id, 
                 messages=[{"role": "user", "content": content}]
