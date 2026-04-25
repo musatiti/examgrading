@@ -5,7 +5,7 @@ from openai import OpenAI
 def grade_batch_exams(student_submissions, key_images):
     """
     Expects:
-    - student_submissions: A dictionary like {"Student_1_Name": [img1, img2], "Student_2_Name": [img1, img2]}
+    - student_submissions: A dictionary {"Student_1.pdf": [img1, img2], "Student_2.pdf": [img1, img2]}
     - key_images: A list of base64 images for the Answer Key
     """
     github_token = os.getenv("GITHUB_TOKEN")
@@ -22,14 +22,12 @@ def grade_batch_exams(student_submissions, key_images):
     model_id = "gpt-4o"
     max_retries = 3
 
-    # ==========================================
-    # ONE-SHOT VISUAL GRADING PIPELINE
-    # ==========================================
-    grading_prompt = """You are a strict, expert AI examiner grading a student's exam.
+    # Notice the prompt now specifically tells the AI it is grading a SINGLE PAGE
+    grading_prompt = """You are a strict, expert AI examiner grading a single page of a student's exam.
     
-    I am providing you with two sets of images:
-    1. The official Answer Key.
-    2. The Student's Exam.
+    I am providing you with exactly two images:
+    1. The official Answer Key (for this specific page).
+    2. The Student's Exam (for this specific page).
 
     CRITICAL GRADING RULES:
     1. DIRECT VISUAL COMPARISON: Look directly at the drawings, diagrams, circuits, and handwritten answers in the Student Exam and compare them visually to the Answer Key. Do they match in shape, logic, and content?
@@ -48,7 +46,7 @@ def grade_batch_exams(student_submissions, key_images):
     If you cannot definitively read the student's handwriting, mark it PARTIAL and explicitly state "Handwriting illegible" in the Reasoning.
     -------------------------------------------------------
 
-    For EVERY question found in the exam, use this exact template:
+    For EVERY question found on THIS PAGE, use this exact template:
     
     * Question: [Section] - [Number]
     * Key Shows: [Brief visual description of the key's answer/drawing]
@@ -56,59 +54,64 @@ def grade_batch_exams(student_submissions, key_images):
     * Verdict: [CORRECT / INCORRECT / PARTIAL / BLANK]
     * Reasoning: [1 short sentence explaining the visual match or mismatch.]
     
-    End with:
-    FINAL SCORE: [Total Earned] / [Total Possible] 
+    If there are no questions on this page to grade, simply output: "No gradable questions found on this page."
     """
 
-    master_report = f"--- BATCH GRADING ENGINE: {model_id.upper()} ---\n"
+    master_report = f"--- BATCH GRADING ENGINE: {model_id.upper()} (PAGE-BY-PAGE MODE) ---\n"
 
-    # ==========================================
-    # THE GRADING LOOP
-    # ==========================================
+    # Loop 1: Go through each student
     for student_name, student_images in student_submissions.items():
+        # Print the student's specific PDF filename as a massive header
         master_report += f"\n\n========================================\n"
         master_report += f" GRADING REPORT: {student_name}\n"
         master_report += f"========================================\n\n"
         
-        # Build the message payload for THIS specific student
-        content = [{"type": "text", "text": grading_prompt}]
-        
-        content.append({"type": "text", "text": "--- OFFICIAL ANSWER KEY IMAGES ---"})
-        for b64_img in key_images:
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
-            })
+        # Safety check just in case a student uploaded a 2-page PDF for a 3-page exam
+        if len(student_images) != len(key_images):
+            master_report += f"WARNING: {student_name} has {len(student_images)} pages, but the Answer Key has {len(key_images)} pages. Grading matched pages only.\n\n"
+
+        # Loop 2: The Page-by-Page Chunking
+        # zip() pairs them up: (Key Page 1 + Student Page 1), then (Key Page 2 + Student Page 2)...
+        for page_idx, (key_page, student_page) in enumerate(zip(key_images, student_images)):
+            page_num = page_idx + 1
+            master_report += f"--- PAGE {page_num} ---\n"
             
-        content.append({"type": "text", "text": f"--- {student_name} EXAM IMAGES ---"})
-        for b64_img in student_images:
+            content = [{"type": "text", "text": grading_prompt}]
+            
+            # Feed ONLY Page X of the Key
+            content.append({"type": "text", "text": f"--- OFFICIAL ANSWER KEY (PAGE {page_num}) ---"})
             content.append({
                 "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+                "image_url": {"url": f"data:image/jpeg;base64,{key_page}"}
+            })
+                
+            # Feed ONLY Page X of the Student
+            content.append({"type": "text", "text": f"--- {student_name} (PAGE {page_num}) ---"})
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{student_page}"}
             })
 
-        # Retry Loop for the current student
-        student_success = False
-        for attempt in range(max_retries):
-            try:
-                print(f"Grading {student_name} (Attempt {attempt + 1})...")
-                response = client.chat.completions.create(
-                    model=model_id, 
-                    messages=[{"role": "user", "content": content}]
-                )
-                
-                grade_text = response.choices[0].message.content
-                master_report += grade_text + "\n"
-                student_success = True
-                break # Success! Break out of the retry loop and move to next student
-                
-            except Exception as e:
-                if "429" in str(e) and attempt < max_retries - 1:
-                    print(f"Rate limited on {student_name}, waiting 5 seconds...")
-                    time.sleep(5) 
-                    continue 
-                
-                master_report += f"API ERROR DURING GRADING FOR {student_name}:\n{str(e)}\n"
-                break # Hard fail, log it and move to the next student
-                
+            # Fire the API request for this specific page
+            for attempt in range(max_retries):
+                try:
+                    print(f"Grading {student_name} - Page {page_num} (Attempt {attempt + 1})...")
+                    response = client.chat.completions.create(
+                        model=model_id, 
+                        messages=[{"role": "user", "content": content}]
+                    )
+                    
+                    grade_text = response.choices[0].message.content
+                    master_report += grade_text + "\n\n"
+                    break 
+                    
+                except Exception as e:
+                    if "429" in str(e) and attempt < max_retries - 1:
+                        print(f"Rate limited on {student_name} Page {page_num}, waiting 5 seconds...")
+                        time.sleep(5) 
+                        continue 
+                    
+                    master_report += f"API ERROR DURING GRADING FOR {student_name} PAGE {page_num}:\n{str(e)}\n\n"
+                    break 
+                    
     return master_report
