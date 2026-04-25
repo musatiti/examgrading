@@ -1,11 +1,12 @@
 import base64
 import fitz  # PyMuPDF
-from flask import Flask, render_template, request
+from flask import Flask, render_template_string, request
 from demo_ai import grade_batch_exams
 
 app = Flask(__name__)
 
-HTML="""
+# --- EMBEDDED HTML TEMPLATE ---
+HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -40,7 +41,6 @@ HTML="""
     {% endif %}
 </body>
 </html>
-
 """
 
 def pdf_to_base64_images(file_storage):
@@ -85,9 +85,9 @@ def index():
 
         # Run the grading loop
         result = grade_batch_exams(student_submissions, key_images)
-        return render_template("index.html", result=result)
+        return render_template_string(HTML_TEMPLATE, result=result)
 
-    return render_template("index.html", result=None)
+    return render_template_string(HTML_TEMPLATE, result=None)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
