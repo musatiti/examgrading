@@ -2,22 +2,23 @@ import os
 import time
 from openai import OpenAI
 
-def grade_demo(student_images, key_images):
-    # Grab the GitHub token securely from the environment
+def grade_batch_exams(student_submissions, key_images):
+    """
+    Expects:
+    - student_submissions: A dictionary like {"Student_1_Name": [img1, img2], "Student_2_Name": [img1, img2]}
+    - key_images: A list of base64 images for the Answer Key
+    """
     github_token = os.getenv("GITHUB_TOKEN")
     
-    # A quick safety check just in case Docker forgets the key
     if not github_token:
-        return "API ERROR: GITHUB_TOKEN environment variable not found. Please check your .env or export command."
+        return "API ERROR: GITHUB_TOKEN environment variable not found."
 
-    # Initialize the client for GitHub Models (Azure)
     client = OpenAI(
         base_url="https://models.inference.ai.azure.com",
         api_key=github_token,
         timeout=300.0, 
     )
 
-    # Using the flagship GPT-4o model for maximum logic and reasoning
     model_id = "gpt-4o"
     max_retries = 3
 
@@ -53,48 +54,61 @@ def grade_demo(student_images, key_images):
     * Key Shows: [Brief visual description of the key's answer/drawing]
     * Student Drew/Wrote: [Brief visual description of what the student did]
     * Verdict: [CORRECT / INCORRECT / PARTIAL / BLANK]
-    * Reasoning: [1 short sentence explaining the visual match or mismatch. DO NOT output your internal math or monologue.]
+    * Reasoning: [1 short sentence explaining the visual match or mismatch.]
     
     End with:
     FINAL SCORE: [Total Earned] / [Total Possible] 
     """
 
-    # Build the message payload
-    content = [{"type": "text", "text": grading_prompt}]
-    
-    # Attach Key Images First
-    content.append({"type": "text", "text": "--- OFFICIAL ANSWER KEY IMAGES ---"})
-    for b64_img in key_images:
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
-        })
-        
-    # Attach Student Images Second
-    content.append({"type": "text", "text": "--- STUDENT EXAM IMAGES ---"})
-    for b64_img in student_images:
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
-        })
+    master_report = f"--- BATCH GRADING ENGINE: {model_id.upper()} ---\n"
 
-    # Retry Loop
-    for attempt in range(max_retries):
-        try:
-            print(f"Visually Grading Exam via GitHub Models ({model_id}) (Attempt {attempt + 1})...")
-            final_response = client.chat.completions.create(
-                model=model_id, 
-                messages=[{"role": "user", "content": content}]
-            )
+    # ==========================================
+    # THE GRADING LOOP
+    # ==========================================
+    for student_name, student_images in student_submissions.items():
+        master_report += f"\n\n========================================\n"
+        master_report += f" GRADING REPORT: {student_name}\n"
+        master_report += f"========================================\n\n"
+        
+        # Build the message payload for THIS specific student
+        content = [{"type": "text", "text": grading_prompt}]
+        
+        content.append({"type": "text", "text": "--- OFFICIAL ANSWER KEY IMAGES ---"})
+        for b64_img in key_images:
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+            })
             
-            final_grade = final_response.choices[0].message.content if final_response.choices[0].message.content else "No response generated."
-            
-            actual_model = final_response.model
-            return f"--- GRADING ENGINE: {actual_model.upper()} ---\n\n{final_grade}"
-            
-        except Exception as e:
-            if "429" in str(e) and attempt < max_retries - 1:
-                print("Rate limited, waiting 5 seconds...")
-                time.sleep(5) 
-                continue 
-            return f"API ERROR DURING GRADING:\n{str(e)}\n\nPlease try again later."
+        content.append({"type": "text", "text": f"--- {student_name} EXAM IMAGES ---"})
+        for b64_img in student_images:
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+            })
+
+        # Retry Loop for the current student
+        student_success = False
+        for attempt in range(max_retries):
+            try:
+                print(f"Grading {student_name} (Attempt {attempt + 1})...")
+                response = client.chat.completions.create(
+                    model=model_id, 
+                    messages=[{"role": "user", "content": content}]
+                )
+                
+                grade_text = response.choices[0].message.content
+                master_report += grade_text + "\n"
+                student_success = True
+                break # Success! Break out of the retry loop and move to next student
+                
+            except Exception as e:
+                if "429" in str(e) and attempt < max_retries - 1:
+                    print(f"Rate limited on {student_name}, waiting 5 seconds...")
+                    time.sleep(5) 
+                    continue 
+                
+                master_report += f"API ERROR DURING GRADING FOR {student_name}:\n{str(e)}\n"
+                break # Hard fail, log it and move to the next student
+                
+    return master_report

@@ -1,82 +1,93 @@
-from flask import Flask, request, render_template_string
 import base64
-from io import BytesIO
-from pdf2image import convert_from_bytes
-from demo_ai import grade_demo
+import fitz  # PyMuPDF
+from flask import Flask, render_template, request
+from demo_ai import grade_batch_exams
 
 app = Flask(__name__)
 
-HTML = """
+HTML="""
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>AI Exam Grader (Vision Edition)</title>
-  <style>
-    body { font-family: Arial; margin: 30px; line-height: 1.6; }
-    button { padding: 10px 15px; cursor: pointer; }
-    pre { background: #f5f5f5; padding: 15px; border-radius: 8px; white-space: pre-wrap; font-family: monospace; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Exam Grader</title>
+    <style>
+        body { font-family: sans-serif; margin: 40px; }
+        form { margin-bottom: 20px; padding: 20px; border: 1px solid #ccc; max-width: 600px; }
+        div { margin-bottom: 15px; }
+        label { font-weight: bold; display: block; margin-bottom: 5px; }
+        pre { background: #f4f4f4; padding: 15px; white-space: pre-wrap; word-wrap: break-word; }
+    </style>
 </head>
 <body>
-  <h1>AI Exam Grader</h1>
+    <h1>AI Exam Grader</h1>
+    <form method="POST" enctype="multipart/form-data">
+        <div>
+            <label>Upload Answer Key (Image or PDF):</label>
+            <input type="file" name="key_files" accept="image/*, application/pdf" multiple required>
+        </div>
+        <div>
+            <label>Upload Student Exams (Images or PDFs):</label>
+            <input type="file" name="student_files" accept="image/*, application/pdf" multiple required>
+        </div>
+        <button type="submit">Grade Exams</button>
+    </form>
 
-  <form method="POST" enctype="multipart/form-data">
-    <label>Student Exam (PDF):</label><br>
-    <input type="file" name="student" required><br><br>
-
-    <label>Answer Key (PDF):</label><br>
-    <input type="file" name="key" required><br><br>
-
-    <button type="submit">Grade with Vision AI</button>
-  </form>
-
-  {% if result %}
-    <h2>Grade & Feedback</h2>
-    <pre>{{ result }}</pre>
-  {% endif %}
+    {% if result %}
+        <h2>Grading Results:</h2>
+        <pre>{{ result }}</pre>
+    {% endif %}
 </body>
 </html>
+
 """
 
-def pdf_to_base64_images(file):
-    try:
-        file.seek(0)
-        pdf_bytes = file.read()
+def pdf_to_base64_images(file_storage):
+    """Takes an uploaded PDF file, slices it into pages, and returns base64 images."""
+    base64_images = []
+    pdf_document = fitz.open(stream=file_storage.read(), filetype="pdf")
+    
+    for page_num in range(len(pdf_document)):
+        page = pdf_document.load_page(page_num)
+        # Zoom in 2x for high-resolution images so the AI can read small handwriting
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2)) 
+        img_bytes = pix.tobytes("jpeg")
+        b64 = base64.b64encode(img_bytes).decode("utf-8")
+        base64_images.append(b64)
         
-        # FIX: We added dpi=300 to make the images high-definition!
-        images = convert_from_bytes(pdf_bytes, dpi=100)
-        
-        base64_images = []
-        for img in images:
-            buffered = BytesIO()
-            img.save(buffered, format="JPEG")
-            img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-            base64_images.append(img_str)
-            
-        return base64_images
-    except Exception as e:
-        print(f"Error converting PDF: {str(e)}")
-        return []
+    pdf_document.close()
+    return base64_images
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    result = None
     if request.method == "POST":
-        student_file = request.files.get("student")
-        key_file = request.files.get("key")
+        # Process Answer Key files
+        key_files = request.files.getlist("key_files") 
+        key_images = []
+        for file in key_files:
+            if file.filename:
+                if file.filename.lower().endswith('.pdf'):
+                    key_images.extend(pdf_to_base64_images(file))
+                else:
+                    key_images.append(base64.b64encode(file.read()).decode('utf-8'))
 
-        if not student_file or not key_file:
-            result = "Error: Missing files."
-        else:
-            student_images = pdf_to_base64_images(student_file)
-            key_images = pdf_to_base64_images(key_file)
-            
-            if not student_images or not key_images:
-                result = "Error: Could not convert PDFs to images."
-            else:
-                result = grade_demo(student_images, key_images)
+        # Process Student Exam files into a dictionary
+        student_files = request.files.getlist("student_files") 
+        student_submissions = {}
+        
+        for file in student_files:
+            if file.filename:
+                if file.filename.lower().endswith('.pdf'):
+                    student_submissions[file.filename] = pdf_to_base64_images(file)
+                else:
+                    student_submissions[file.filename] = [base64.b64encode(file.read()).decode('utf-8')]
 
-    return render_template_string(HTML, result=result)
+        # Run the grading loop
+        result = grade_batch_exams(student_submissions, key_images)
+        return render_template("index.html", result=result)
+
+    return render_template("index.html", result=None)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)  # nosec B104
+    app.run(host="0.0.0.0", port=5000)
