@@ -6,3 +6,4 @@ gunicorn
 pdf2image
 pytesseract
 PyMuPDF
+google-generativeai
