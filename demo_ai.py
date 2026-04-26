@@ -30,12 +30,12 @@ def grade_batch_exams(student_submissions, key_images):
     2. The Student's Exam (for this specific page).
 
     CRITICAL GRADING RULES:
-    1. DIRECT VISUAL COMPARISON: Look directly at the drawings, diagrams, circuits, and handwritten answers in the Student Exam and compare them visually to the Answer Key. Do they match in shape, logic, and content?
-    2. ANTI-CHEATING (IGNORE RED INK): The student exam may already have grades, scores, checkmarks, or red "X"s written on it by a human. YOU MUST COMPLETELY IGNORE THESE. Grade purely on the student's raw pencil/pen work.
-    3. STRICT SPATIAL AWARENESS: Only grade what is inside the official answer boxes or designated drawing areas.
-    4. LOGIC CHECK: If the Student's answer visually or textually matches the Key, the Verdict MUST be CORRECT. Do not contradict yourself.
-    5. NO SUMMARIES: DO NOT output any summaries, final notes, or extra text at the end of the page. ONLY output the grading templates.
-    6. POINTS EXTRACTION: You must determine the point value for each question. Look closely for explicit labels (e.g., "[2.5 points]"). If a section header says "(15 points)" and contains 10 questions, do the math and assign 1.5 points per question. If the Verdict is CORRECT, Points Earned = Points Possible. If the Verdict is INCORRECT, Points Earned = 0.
+    1. DIRECT VISUAL COMPARISON: Look directly at the Student Exam. You MUST read exactly what the student wrote. Do not assume it matches the key. If the student wrote 'a' and the key says 'b', you must mark it INCORRECT.
+    2. IGNORE THE ANSWER TABLE: Do NOT grade the summary "Answers table" grid at the bottom of the page. ONLY grade the individual questions where they are written.
+    3. ANTI-CHEATING (IGNORE RED INK): Completely ignore any red ink, human grades, or checkmarks.
+    4. LOGIC CHECK: If the Student's written answer matches the Key, output CORRECT. If it differs in any way, output INCORRECT.
+    5. NO SUMMARIES: Output ONLY the grading templates. Do not output a total score, final evaluation, or any conversational text at the end of the page.
+    6. POINTS EXTRACTION: Determine the point value for each question. Look closely for explicit labels. If a section says "(15 points)" and has 10 questions, assign 1.5 points per question. If the Verdict is CORRECT, Points Earned = Points Possible. If INCORRECT, Points Earned = 0.
 
     --- TRAINING EXAMPLES (Edge Cases to Watch Out For) ---
     Example A: The "Don't Care" State
@@ -112,7 +112,6 @@ def grade_batch_exams(student_submissions, key_images):
         # ==========================================
         # THE PYTHON ACCOUNTANT (WEIGHTED MATH TALLY)
         # ==========================================
-        # Regex to find all instances of "Points: X / Y" and extract the numbers
         point_matches = re.findall(r"Points:\s*([\d\.]+)\s*/\s*([\d\.]+)", student_report, re.IGNORECASE)
         
         total_earned = 0.0
@@ -121,6 +120,10 @@ def grade_batch_exams(student_submissions, key_images):
         for earned, possible in point_matches:
             total_earned += float(earned)
             total_possible += float(possible)
+            
+        # Fix the Python floating point decimals
+        total_earned = round(total_earned, 2)
+        total_possible = round(total_possible, 2)
         
         student_report += f"----------------------------------------\n"
         student_report += f" FINAL EXAM TALLY: {student_name}\n"
