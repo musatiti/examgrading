@@ -18,7 +18,7 @@ def grade_batch_exams(student_submissions, key_images):
     genai.configure(api_key=api_key)
     
     # Using Gemini 1.5 Flash (Insanely fast and great at vision/text tasks)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-2.5-flash')
     max_retries = 3
 
     grading_prompt = """You are a strict, expert AI examiner grading a single page of a student's exam.
