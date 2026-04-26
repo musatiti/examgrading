@@ -1,7 +1,7 @@
 import os
 import time
 import re
-from openai import OpenAI
+import google.generativeai as genai
 
 def grade_batch_exams(student_submissions, key_images):
     """
@@ -9,18 +9,16 @@ def grade_batch_exams(student_submissions, key_images):
     - student_submissions: A dictionary {"Student_1.pdf": [img1, img2], "Student_2.pdf": [img1, img2]}
     - key_images: A list of base64 images for the Answer Key
     """
-    github_token = os.getenv("GITHUB_TOKEN")
+    api_key = os.getenv("GEMINI_API_KEY")
     
-    if not github_token:
-        return "API ERROR: GITHUB_TOKEN environment variable not found."
+    if not api_key:
+        return "API ERROR: GEMINI_API_KEY environment variable not found."
 
-    client = OpenAI(
-        base_url="https://models.inference.ai.azure.com",
-        api_key=github_token,
-        timeout=300.0, 
-    )
-
-    model_id = "gpt-4o"
+    # Configure the Google Gemini Client
+    genai.configure(api_key=api_key)
+    
+    # Using Gemini 1.5 Flash (Insanely fast and great at vision/text tasks)
+    model = genai.GenerativeModel('gemini-1.5-flash')
     max_retries = 3
 
     grading_prompt = """You are a strict, expert AI examiner grading a single page of a student's exam.
@@ -60,7 +58,7 @@ def grade_batch_exams(student_submissions, key_images):
     If there are no questions on this page to grade, simply output: "No gradable questions found on this page."
     """
 
-    master_report = f"--- BATCH GRADING ENGINE: {model_id.upper()} (PAGE-BY-PAGE MODE) ---\n"
+    master_report = f"--- BATCH GRADING ENGINE: GEMINI-1.5-FLASH (PAGE-BY-PAGE MODE) ---\n"
 
     for student_name, student_images in student_submissions.items():
         student_report = f"\n\n========================================\n"
@@ -74,29 +72,21 @@ def grade_batch_exams(student_submissions, key_images):
             page_num = page_idx + 1
             student_report += f"--- PAGE {page_num} ---\n"
             
-            content = [{"type": "text", "text": grading_prompt}]
-            
-            content.append({"type": "text", "text": f"--- OFFICIAL ANSWER KEY (PAGE {page_num}) ---"})
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{key_page}"}
-            })
-                
-            content.append({"type": "text", "text": f"--- {student_name} (PAGE {page_num}) ---"})
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{student_page}"}
-            })
+            # Gemini builds its message payload via a simple list
+            content = [
+                grading_prompt,
+                f"--- OFFICIAL ANSWER KEY (PAGE {page_num}) ---",
+                {"mime_type": "image/jpeg", "data": key_page},
+                f"--- {student_name} (PAGE {page_num}) ---",
+                {"mime_type": "image/jpeg", "data": student_page}
+            ]
 
             for attempt in range(max_retries):
                 try:
                     print(f"Grading {student_name} - Page {page_num} (Attempt {attempt + 1})...")
-                    response = client.chat.completions.create(
-                        model=model_id, 
-                        messages=[{"role": "user", "content": content}]
-                    )
+                    response = model.generate_content(content)
                     
-                    grade_text = response.choices[0].message.content
+                    grade_text = response.text
                     student_report += grade_text + "\n\n"
                     break 
                     
