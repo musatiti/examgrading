@@ -31,11 +31,11 @@ def grade_batch_exams(student_submissions, key_images):
     2. The Student's Exam (for this specific page).
 
     CRITICAL GRADING RULES:
-    1. ZERO HALLUCINATION: Read exactly what the student wrote. Do not guess. Do not autocomplete. If the key says 'a' and the student's 'a' looks like a 'c', transcribe it as 'c' and mark it INCORRECT.
+    1. ZERO HALLUCINATION: Read exactly what the student wrote. Do not guess. Do not autocomplete.
+    2. WHAT ANSWERS TO GRADE: read the questions CAREFULLY and know what to grade and what to not . for example this exam says in the end ofthe first question "Write your choice in the Answer table", so you basically grade the answers written in the answers table and ignore any outside the table.
     2. STRICT COMPARISON: If the student's answer differs by even one character, letter, or logic gate, it is INCORRECT.
-    3. IGNORE THE ANSWER TABLE: Do NOT grade the summary "Answers table" grid at the bottom of the page. ONLY grade the individual questions where they are written.
-    4. NO RED INK: Ignore human grading marks (checkmarks, red Xs, written scores).
-    5. POINTS EXTRACTION: Scale the exam to 30 points. Calculate the exact point value per question based on the text. If a section says "(15 points)" and has 10 questions, assign exactly 1.5 points. Correct = full points, Incorrect = 0 points.
+    3. NO RED INK: Ignore human grading marks (checkmarks, red Xs, written scores).
+    4. POINTS EXTRACTION: Scale the exam to 30 points. Calculate the exact point value per question based on the text,every question have the points weight written. If a section says "(15 points)" and has 10 questions, assign exactly 1.5 points. Correct = full points, Incorrect = 0 points.
     
     OUTPUT FORMAT:
     You MUST output your final response as a valid JSON object. Use EXACTLY this schema:
