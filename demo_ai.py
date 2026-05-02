@@ -23,17 +23,18 @@ def grade_batch_exams(student_submissions, key_images):
     model_id = "gpt-4o"
     max_retries = 3
 
-    grading_prompt = """You are a strict, expert AI examiner grading a single page of a student's exam.
+    # THE ANTI-LAZINESS PROMPT
+    grading_prompt = """You are a strict, highly analytical AI examiner grading a single page of a student's exam.
     
     I am providing you with exactly two images:
     1. The official Answer Key (for this specific page).
     2. The Student's Exam (for this specific page).
 
     CRITICAL GRADING RULES:
-    1. DIRECT VISUAL COMPARISON: Look directly at the Student Exam. You MUST read exactly what the student wrote. Do not assume it matches the key. If the student wrote 'a' and the key says 'b', you must mark it INCORRECT.
-    2. IGNORE THE ANSWER TABLE: Do NOT grade the summary "Answers table" grid at the bottom of the page. ONLY grade the individual questions where they are written.
-    3. ANTI-CHEATING (IGNORE RED INK): Completely ignore any red ink, human grades, or checkmarks.
-    4. LOGIC CHECK: If the Student's written answer matches the Key, output CORRECT. If it differs in any way, output INCORRECT.
+    1. ZERO CONFIRMATION BIAS (LITERAL TRANSCRIPTION): Vision models often get "lazy" and assume a student's messy handwriting matches the answer key. YOU MUST FIGHT THIS. Before grading, look ONLY at the student's paper and literally transcribe exactly what they wrote, letter for letter, number for number. Do not autocomplete their answers.
+    2. DIRECT VISUAL COMPARISON: Compare your literal transcription of the student's work to the Answer Key. If the student wrote 'a' and the key says 'b', mark it INCORRECT.
+    3. IGNORE THE ANSWER TABLE: Do NOT grade the summary "Answers table" grid at the bottom of the page. ONLY grade the individual questions where they are written.
+    4. ANTI-CHEATING (IGNORE RED INK): Completely ignore any red ink, human grades, or checkmarks.
     5. NO SUMMARIES: Output ONLY the grading templates. Do not output a total score, final evaluation, or any conversational text at the end of the page.
     6. POINTS EXTRACTION: The entire exam is scaled to exactly 30 points. Determine the point value for each question based on explicit labels. If a section says "(15 points)" and has 10 questions, assign exactly 1.5 points per question. If the Verdict is CORRECT, Points Earned = Points Possible. If INCORRECT, Points Earned = 0.
 
@@ -45,22 +46,22 @@ def grade_batch_exams(student_submissions, key_images):
     If the Answer Key shows a full adder with a carry-out wire, and the student drew the full adder but forgot the final carry-out wire, mark it INCORRECT. Close is not enough.
 
     Example C: Illegible Handwriting
-    If you cannot definitively read the student's handwriting, mark it PARTIAL and explicitly state "Handwriting illegible" in the Reasoning.
+    If you cannot definitively read the student's handwriting, do not guess. Mark it INCORRECT and explicitly state "Handwriting illegible" in the Reasoning.
     -------------------------------------------------------
 
     For EVERY question found on THIS PAGE, use this exact template:
     
     * Question: [Section] - [Number]
-    * Key Shows: [Brief visual description of the key's answer/drawing]
-    * Student Drew/Wrote: [Brief visual description of what the student did]
+    * Key Shows: [Exact answer/drawing from the key]
+    * Student Literal Transcription: [EXACTLY what the student wrote/drew, with zero assumptions]
     * Verdict: [CORRECT / INCORRECT / PARTIAL / BLANK]
     * Points: [Earned] / [Possible]
-    * Reasoning: [1 short sentence explaining the visual match or mismatch.]
+    * Reasoning: [1 short sentence explaining the comparison.]
     
     If there are no questions on this page to grade, simply output: "No gradable questions found on this page."
     """
 
-    master_report = f"--- BATCH GRADING ENGINE: {model_id.upper()} (PAGE-BY-PAGE MODE) ---\n"
+    master_report = f"--- BATCH GRADING ENGINE: {model_id.upper()} (STRICT TRANSCRIPTION MODE) ---\n"
 
     for student_name, student_images in student_submissions.items():
         student_report = f"\n\n========================================\n"
@@ -103,7 +104,7 @@ def grade_batch_exams(student_submissions, key_images):
                 except Exception as e:
                     if "429" in str(e) and attempt < max_retries - 1:
                         print(f"Rate limited on {student_name} Page {page_num}, waiting 15 seconds...")
-                        time.sleep(15) # Increased sleep time since Azure's free tier is strict
+                        time.sleep(15) 
                         continue 
                     
                     student_report += f"API ERROR DURING GRADING FOR {student_name} PAGE {page_num}:\n{str(e)}\n\n"
@@ -121,7 +122,6 @@ def grade_batch_exams(student_submissions, key_images):
             raw_earned += float(earned)
             raw_possible += float(possible)
             
-        # The Scaler logic: converts any weird AI totals perfectly to out of 30
         if raw_possible > 0:
             final_scaled_score = (raw_earned / raw_possible) * 30
         else:
