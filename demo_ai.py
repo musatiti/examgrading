@@ -1,7 +1,7 @@
 import os
 import time
 import re
-import google.generativeai as genai
+from openai import OpenAI
 
 def grade_batch_exams(student_submissions, key_images):
     """
@@ -9,16 +9,18 @@ def grade_batch_exams(student_submissions, key_images):
     - student_submissions: A dictionary {"Student_1.pdf": [img1, img2], "Student_2.pdf": [img1, img2]}
     - key_images: A list of base64 images for the Answer Key
     """
-    api_key = os.getenv("GEMINI_API_KEY")
+    github_token = os.getenv("GITHUB_TOKEN")
     
-    if not api_key:
-        return "API ERROR: GEMINI_API_KEY environment variable not found."
+    if not github_token:
+        return "API ERROR: GITHUB_TOKEN environment variable not found."
 
-    # Configure the Google Gemini Client
-    genai.configure(api_key=api_key)
-    
-    # Using Gemini 1.5 Flash (Insanely fast and great at vision/text tasks)
-    model = genai.GenerativeModel('gemini-2.5-flash')
+    client = OpenAI(
+        base_url="https://models.inference.ai.azure.com",
+        api_key=github_token,
+        timeout=300.0, 
+    )
+
+    model_id = "gpt-4o"
     max_retries = 3
 
     grading_prompt = """You are a strict, expert AI examiner grading a single page of a student's exam.
@@ -33,7 +35,7 @@ def grade_batch_exams(student_submissions, key_images):
     3. ANTI-CHEATING (IGNORE RED INK): Completely ignore any red ink, human grades, or checkmarks.
     4. LOGIC CHECK: If the Student's written answer matches the Key, output CORRECT. If it differs in any way, output INCORRECT.
     5. NO SUMMARIES: Output ONLY the grading templates. Do not output a total score, final evaluation, or any conversational text at the end of the page.
-    6. POINTS EXTRACTION: Determine the point value for each question. Look closely for explicit labels. If a section says "(15 points)" and has 10 questions, assign 1.5 points per question. If the Verdict is CORRECT, Points Earned = Points Possible. If INCORRECT, Points Earned = 0.
+    6. POINTS EXTRACTION: The entire exam is scaled to exactly 30 points. Determine the point value for each question based on explicit labels. If a section says "(15 points)" and has 10 questions, assign exactly 1.5 points per question. If the Verdict is CORRECT, Points Earned = Points Possible. If INCORRECT, Points Earned = 0.
 
     --- TRAINING EXAMPLES (Edge Cases to Watch Out For) ---
     Example A: The "Don't Care" State
@@ -58,7 +60,7 @@ def grade_batch_exams(student_submissions, key_images):
     If there are no questions on this page to grade, simply output: "No gradable questions found on this page."
     """
 
-    master_report = f"--- BATCH GRADING ENGINE: GEMINI-1.5-FLASH (PAGE-BY-PAGE MODE) ---\n"
+    master_report = f"--- BATCH GRADING ENGINE: {model_id.upper()} (PAGE-BY-PAGE MODE) ---\n"
 
     for student_name, student_images in student_submissions.items():
         student_report = f"\n\n========================================\n"
@@ -72,54 +74,67 @@ def grade_batch_exams(student_submissions, key_images):
             page_num = page_idx + 1
             student_report += f"--- PAGE {page_num} ---\n"
             
-            # Gemini builds its message payload via a simple list
-            content = [
-                grading_prompt,
-                f"--- OFFICIAL ANSWER KEY (PAGE {page_num}) ---",
-                {"mime_type": "image/jpeg", "data": key_page},
-                f"--- {student_name} (PAGE {page_num}) ---",
-                {"mime_type": "image/jpeg", "data": student_page}
-            ]
+            content = [{"type": "text", "text": grading_prompt}]
+            
+            content.append({"type": "text", "text": f"--- OFFICIAL ANSWER KEY (PAGE {page_num}) ---"})
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{key_page}"}
+            })
+                
+            content.append({"type": "text", "text": f"--- {student_name} (PAGE {page_num}) ---"})
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{student_page}"}
+            })
 
             for attempt in range(max_retries):
                 try:
                     print(f"Grading {student_name} - Page {page_num} (Attempt {attempt + 1})...")
-                    response = model.generate_content(content)
+                    response = client.chat.completions.create(
+                        model=model_id, 
+                        messages=[{"role": "user", "content": content}]
+                    )
                     
-                    grade_text = response.text
+                    grade_text = response.choices[0].message.content
                     student_report += grade_text + "\n\n"
                     break 
                     
                 except Exception as e:
                     if "429" in str(e) and attempt < max_retries - 1:
-                        print(f"Rate limited on {student_name} Page {page_num}, waiting 5 seconds...")
-                        time.sleep(5) 
+                        print(f"Rate limited on {student_name} Page {page_num}, waiting 15 seconds...")
+                        time.sleep(15) # Increased sleep time since Azure's free tier is strict
                         continue 
                     
                     student_report += f"API ERROR DURING GRADING FOR {student_name} PAGE {page_num}:\n{str(e)}\n\n"
                     break 
         
         # ==========================================
-        # THE PYTHON ACCOUNTANT (WEIGHTED MATH TALLY)
+        # THE PYTHON ACCOUNTANT (WITH 30-POINT SCALER)
         # ==========================================
         point_matches = re.findall(r"Points:\s*([\d\.]+)\s*/\s*([\d\.]+)", student_report, re.IGNORECASE)
         
-        total_earned = 0.0
-        total_possible = 0.0
+        raw_earned = 0.0
+        raw_possible = 0.0
         
         for earned, possible in point_matches:
-            total_earned += float(earned)
-            total_possible += float(possible)
+            raw_earned += float(earned)
+            raw_possible += float(possible)
             
-        # Fix the Python floating point decimals
-        total_earned = round(total_earned, 2)
-        total_possible = round(total_possible, 2)
+        # The Scaler logic: converts any weird AI totals perfectly to out of 30
+        if raw_possible > 0:
+            final_scaled_score = (raw_earned / raw_possible) * 30
+        else:
+            final_scaled_score = 0.0
+            
+        final_scaled_score = round(final_scaled_score, 2)
         
         student_report += f"----------------------------------------\n"
         student_report += f" FINAL EXAM TALLY: {student_name}\n"
         student_report += f"----------------------------------------\n"
         student_report += f"Total Questions Graded: {len(point_matches)}\n"
-        student_report += f"ESTIMATED SCORE: {total_earned} / {total_possible}\n"
+        student_report += f"Raw AI Detection: {round(raw_earned, 2)} / {round(raw_possible, 2)}\n"
+        student_report += f"FINAL SCALED SCORE: {final_scaled_score} / 30\n"
         student_report += f"========================================\n\n"
         
         master_report += student_report
