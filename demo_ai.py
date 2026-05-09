@@ -20,7 +20,7 @@ def grade_batch_exams(student_submissions, key_images):
         timeout=300.0, 
     )
 
-    model_id = "Llama-3.2-90B-Vision-Instruct"
+    model_id = "gpt-4o"
     max_retries = 3
 
     # THE ROBOTIC, WHOLE-DOCUMENT PROMPT
