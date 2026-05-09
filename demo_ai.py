@@ -20,7 +20,7 @@ def grade_batch_exams(student_submissions, key_images):
         timeout=300.0, 
     )
 
-    model_id = "openai/gpt-5"
+    model_id = "gpt-5"
     max_retries = 3
 
     # THE ROBOTIC, WHOLE-DOCUMENT PROMPT
