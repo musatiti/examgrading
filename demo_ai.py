@@ -4,23 +4,21 @@ import json
 from openai import OpenAI
 
 def grade_batch_exams(student_submissions, key_images):
-    """
-    Expects:
-    - student_submissions: A dictionary {"Student_1.pdf": [img1, img2, img3], "Student_2.pdf": [img1, img2]}
-    - key_images: A list of base64 images for the Answer Key
-    """
-    github_token = os.getenv("GITHUB_TOKEN")
     
-    if not github_token:
-        return "API ERROR: GITHUB_TOKEN environment variable not found."
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    
+    if not openrouter_key:
+        return "API ERROR: OPENROUTER_API_KEY environment variable not found."
 
+    # Pointing the OpenAI library directly at OpenRouter
     client = OpenAI(
-        base_url="https://models.inference.ai.azure.com",
-        api_key=github_token,
+        base_url="https://openrouter.ai/api/v1",
+        api_key=openrouter_key,
         timeout=300.0, 
     )
 
-    model_id = "gpt-4o"
+    # Gemini 2.0 Flash locked and loaded
+    model_id = "google/gemini-2.0-flash-001"
     max_retries = 3
 
     # THE ROBOTIC, WHOLE-DOCUMENT PROMPT
