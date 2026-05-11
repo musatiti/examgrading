@@ -1,48 +1,35 @@
 import os
 import time
 import json
-import base64
-import io
-from PIL import Image
-from openai import OpenAI
-
-def compress_image(base64_string, max_dimension=1200):
-    """
-    Takes a giant base64 image, shrinks it so the longest edge is max_dimension,
-    compresses the JPEG quality, and returns a lightweight base64 string.
-    """
-    try:
-        img_data = base64.b64decode(base64_string)
-        img = Image.open(io.BytesIO(img_data)).convert('RGB')
-        
-        # Shrink the image down while keeping aspect ratio
-        img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
-        
-        # Save it to a new buffer with compressed quality
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=80) 
-        return base64.b64encode(buf.getvalue()).decode('utf-8')
-    except Exception as e:
-        print(f"Failed to compress image: {e}")
-        return base64_string # Fallback to original if it fails
+import google.generativeai as genai
 
 def grade_batch_exams(student_submissions, key_images):
+    """
+    Expects:
+    - student_submissions: A dictionary {"Student_1.pdf": [img1, img2, img3]}
+    - key_images: A list of base64 images for the Answer Key
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
     
-    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        return "API ERROR: GEMINI_API_KEY environment variable not found."
+
+    # Wire directly to Google's official servers
+    genai.configure(api_key=api_key)
     
-    if not openrouter_key:
-        return "API ERROR: OPENROUTER_API_KEY environment variable not found."
-
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=openrouter_key,
-        timeout=300.0, # 5 minute timeout just in case it takes a while to upload
-    )
-
-    model_id = "google/gemini-2.0-flash-001"
+    # Locking in the official Gemini 2.0 Flash model
+    model_id = "models/gemini-2.0-flash"
     max_retries = 3
 
-    # THE WHOLE-DOCUMENT PROMPT
+    # Lock Gemini into strict JSON mode with zero creativity
+    model = genai.GenerativeModel(
+        model_name=model_id,
+        generation_config={
+            "temperature": 0.0,
+            "response_mime_type": "application/json"
+        }
+    )
+
     grading_prompt = """You are a robotic, highly strict grading algorithm. Your goal is 100% accurate visual transcription and logic comparison.
     
     I am providing you with two complete documents:
@@ -75,38 +62,31 @@ def grade_batch_exams(student_submissions, key_images):
     }
     """
 
-    master_report = f"--- BATCH GRADING ENGINE: {model_id.upper()} (COMPRESSED WHOLE-DOC MODE) ---\n"
+    master_report = f"--- BATCH GRADING ENGINE: GEMINI 2.0 FLASH (WHOLE-DOCUMENT JSON MODE) ---\n"
 
     for student_name, student_images in student_submissions.items():
         student_report = f"\n\n========================================\n"
         student_report += f" GRADING REPORT: {student_name}\n"
         student_report += f"========================================\n\n"
         
-        # Build payload with COMPRESSED images
-        content = [{"type": "text", "text": grading_prompt}]
-        
-        content.append({"type": "text", "text": "--- ENTIRE OFFICIAL ANSWER KEY ---"})
+        # Build the native Google Payload (Uncompressed, High-Res Images)
+        content = [grading_prompt, "--- ENTIRE OFFICIAL ANSWER KEY ---"]
         for img in key_images:
-            lightweight_img = compress_image(img)
-            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{lightweight_img}"}})
+            content.append({"mime_type": "image/jpeg", "data": img})
             
-        content.append({"type": "text", "text": f"--- ENTIRE STUDENT EXAM: {student_name} ---"})
+        content.append(f"--- ENTIRE STUDENT EXAM: {student_name} ---")
         for img in student_images:
-            lightweight_img = compress_image(img)
-            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{lightweight_img}"}})
+            content.append({"mime_type": "image/jpeg", "data": img})
 
         for attempt in range(max_retries):
             try:
                 print(f"Grading {student_name} (All Pages at Once) - Attempt {attempt + 1}...")
                 
-                response = client.chat.completions.create(
-                    model=model_id, 
-                    response_format={ "type": "json_object" },
-                    temperature=0.0,
-                    messages=[{"role": "user", "content": content}]
-                )
+                # Direct API Call to Google
+                response = model.generate_content(content)
                 
-                exam_data = json.loads(response.choices[0].message.content)
+                # Parse the JSON
+                exam_data = json.loads(response.text)
                 questions = exam_data.get("questions", [])
                 
                 if not questions:
@@ -142,18 +122,12 @@ def grade_batch_exams(student_submissions, key_images):
                 break 
                 
             except Exception as e:
-                error_msg = str(e)
-                print(f"Error caught: {error_msg}")
-                if "429" in error_msg and attempt < max_retries - 1:
-                    print(f"Rate limited on {student_name}, waiting 15 seconds...")
-                    time.sleep(15) 
+                if "429" in str(e) and attempt < max_retries - 1:
+                    print(f"Rate limited on {student_name}, waiting 10 seconds...")
+                    time.sleep(10) 
                     continue 
-                elif "Connection error" in error_msg and attempt < max_retries - 1:
-                    print("Connection dropped! Payload might still be heavy. Retrying...")
-                    time.sleep(5)
-                    continue
                 
-                student_report += f"API ERROR DURING GRADING FOR {student_name}:\n{error_msg}\n\n"
+                student_report += f"API ERROR DURING GRADING FOR {student_name}:\n{str(e)}\n\n"
                 break 
                 
         master_report += student_report
