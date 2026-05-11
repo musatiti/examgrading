@@ -1,7 +1,30 @@
 import os
 import time
 import json
+import base64
+import io
+from PIL import Image
 from openai import OpenAI
+
+def compress_image(base64_string, max_dimension=1200):
+    """
+    Takes a giant base64 image, shrinks it so the longest edge is max_dimension,
+    compresses the JPEG quality, and returns a lightweight base64 string.
+    """
+    try:
+        img_data = base64.b64decode(base64_string)
+        img = Image.open(io.BytesIO(img_data)).convert('RGB')
+        
+        # Shrink the image down while keeping aspect ratio
+        img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+        
+        # Save it to a new buffer with compressed quality
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=80) 
+        return base64.b64encode(buf.getvalue()).decode('utf-8')
+    except Exception as e:
+        print(f"Failed to compress image: {e}")
+        return base64_string # Fallback to original if it fails
 
 def grade_batch_exams(student_submissions, key_images):
     
@@ -10,18 +33,16 @@ def grade_batch_exams(student_submissions, key_images):
     if not openrouter_key:
         return "API ERROR: OPENROUTER_API_KEY environment variable not found."
 
-    # Pointing the OpenAI library directly at OpenRouter
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=openrouter_key,
-        timeout=300.0, 
+        timeout=300.0, # 5 minute timeout just in case it takes a while to upload
     )
 
-    # Gemini 2.0 Flash locked and loaded
     model_id = "google/gemini-2.0-flash-001"
     max_retries = 3
 
-    # THE ROBOTIC, WHOLE-DOCUMENT PROMPT
+    # THE WHOLE-DOCUMENT PROMPT
     grading_prompt = """You are a robotic, highly strict grading algorithm. Your goal is 100% accurate visual transcription and logic comparison.
     
     I am providing you with two complete documents:
@@ -54,29 +75,30 @@ def grade_batch_exams(student_submissions, key_images):
     }
     """
 
-    master_report = f"--- BATCH GRADING ENGINE: {model_id.upper()} (WHOLE-DOCUMENT JSON MODE) ---\n"
+    master_report = f"--- BATCH GRADING ENGINE: {model_id.upper()} (COMPRESSED WHOLE-DOC MODE) ---\n"
 
     for student_name, student_images in student_submissions.items():
         student_report = f"\n\n========================================\n"
         student_report += f" GRADING REPORT: {student_name}\n"
         student_report += f"========================================\n\n"
         
-        # Build payload: All Key images first, then All Student images
+        # Build payload with COMPRESSED images
         content = [{"type": "text", "text": grading_prompt}]
         
         content.append({"type": "text", "text": "--- ENTIRE OFFICIAL ANSWER KEY ---"})
         for img in key_images:
-            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img}"}})
+            lightweight_img = compress_image(img)
+            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{lightweight_img}"}})
             
         content.append({"type": "text", "text": f"--- ENTIRE STUDENT EXAM: {student_name} ---"})
         for img in student_images:
-            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img}"}})
+            lightweight_img = compress_image(img)
+            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{lightweight_img}"}})
 
         for attempt in range(max_retries):
             try:
                 print(f"Grading {student_name} (All Pages at Once) - Attempt {attempt + 1}...")
                 
-                # THE SILVER BULLETS: JSON Mode + Temperature 0.0
                 response = client.chat.completions.create(
                     model=model_id, 
                     response_format={ "type": "json_object" },
@@ -84,7 +106,6 @@ def grade_batch_exams(student_submissions, key_images):
                     messages=[{"role": "user", "content": content}]
                 )
                 
-                # Parse JSON directly
                 exam_data = json.loads(response.choices[0].message.content)
                 questions = exam_data.get("questions", [])
                 
@@ -99,9 +120,7 @@ def grade_batch_exams(student_submissions, key_images):
                     student_report += f"* Points: {q.get('points_earned')} / {q.get('points_possible')}\n"
                     student_report += f"* Reasoning: {q.get('reasoning')}\n\n"
                 
-                # ==========================================
                 # THE 30-POINT SCALER
-                # ==========================================
                 raw_earned = float(exam_data.get("student_total_earned", 0))
                 raw_possible = float(exam_data.get("student_total_possible", 0))
                 
@@ -123,12 +142,18 @@ def grade_batch_exams(student_submissions, key_images):
                 break 
                 
             except Exception as e:
-                if "429" in str(e) and attempt < max_retries - 1:
+                error_msg = str(e)
+                print(f"Error caught: {error_msg}")
+                if "429" in error_msg and attempt < max_retries - 1:
                     print(f"Rate limited on {student_name}, waiting 15 seconds...")
                     time.sleep(15) 
                     continue 
+                elif "Connection error" in error_msg and attempt < max_retries - 1:
+                    print("Connection dropped! Payload might still be heavy. Retrying...")
+                    time.sleep(5)
+                    continue
                 
-                student_report += f"API ERROR DURING GRADING FOR {student_name}:\n{str(e)}\n\n"
+                student_report += f"API ERROR DURING GRADING FOR {student_name}:\n{error_msg}\n\n"
                 break 
                 
         master_report += student_report
