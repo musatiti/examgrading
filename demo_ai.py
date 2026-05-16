@@ -1,7 +1,7 @@
 import os
 import time
 import json
-import google.generativeai as genai
+from openai import OpenAI
 
 def grade_batch_exams(student_submissions, key_images):
     """
@@ -9,45 +9,37 @@ def grade_batch_exams(student_submissions, key_images):
     - student_submissions: A dictionary {"Student_1.pdf": [img1, img2, img3]}
     - key_images: A list of base64 images for the Answer Key
     """
-    api_key = os.getenv("GEMINI_API_KEY")
+    github_token = os.getenv("GITHUB_TOKEN")
     
-    if not api_key:
-        return "API ERROR: GEMINI_API_KEY environment variable not found."
+    if not github_token:
+        return "API ERROR: GITHUB_TOKEN environment variable not found."
 
-    # Wire directly to Google's official servers
-    genai.configure(api_key=api_key)
-    
-    # Locking in the official Gemini 2.0 Flash model
-    model_id = "models/gemini-2.0-flash"
-    max_retries = 3
-
-    # Lock Gemini into strict JSON mode with zero creativity
-    model = genai.GenerativeModel(
-        model_name=model_id,
-        generation_config={
-            "temperature": 0.0,
-            "response_mime_type": "application/json"
-        }
+    client = OpenAI(
+        base_url="https://models.inference.ai.azure.com",
+        api_key=github_token,
+        timeout=300.0, 
     )
 
-    grading_prompt = """You are a robotic, highly strict grading algorithm. Your goal is 100% accurate visual transcription and logic comparison.
+    model_id = "gpt-4o"
+    max_retries = 3
+
+    # THE ANTI-LAZINESS JSON PROMPT
+    grading_prompt = """You are a robotic, highly strict grading algorithm. Your only goal is 100% accurate visual transcription and logic comparison.
     
-    I am providing you with two complete documents:
-    1. The ENTIRE official Answer Key.
-    2. The ENTIRE Student's Exam.
+    I am providing you with exactly two images:
+    1. The official Answer Key (for this specific page).
+    2. The Student's Exam (for this specific page).
 
     CRITICAL GRADING RULES:
-    1. FIND THE ANSWERS: The student's exam may have cover pages, blank pages, or be out of order. Scan the entire document to match the student's answers to the correct questions on the Answer Key.
-    2. ZERO CONFIRMATION BIAS: Read exactly what the student wrote. Do not guess. If the key says 'a' and the student wrote 'c', transcribe it as 'c' and mark it INCORRECT.
-    3. IGNORE THE ANSWER TABLE: Do NOT grade the summary "Answers table" grid. ONLY grade the individual questions where they are written.
-    4. ANTI-CHEATING: Completely ignore any red ink, human grades, or checkmarks.
-    5. POINTS EXTRACTION: Calculate the exact point value per question based on the text. If a section says "(15 points)" and has 10 questions, assign exactly 1.5 points. Correct = full points, Incorrect = 0 points.
+    1. ZERO HALLUCINATION (LITERAL TRANSCRIPTION): Read exactly what the student wrote. Do not guess. If the key says 'a' and the student's 'a' looks like a 'c', transcribe it as 'c' and mark it INCORRECT.
+    2. STRICT COMPARISON: If the student's answer differs by even one character, letter, or logic gate, it is INCORRECT.
+    3. IGNORE THE ANSWER TABLE: Do NOT grade the summary "Answers table" grid at the bottom of the page. ONLY grade the individual questions where they are written.
+    4. NO RED INK: Ignore human grading marks (checkmarks, red Xs, written scores).
+    5. POINTS EXTRACTION: Calculate the exact point value per question based on explicit labels. If a section says "(15 points)" and has 10 questions, assign exactly 1.5 points. Correct = full points, Incorrect = 0 points.
     
     OUTPUT FORMAT:
-    You MUST output your final response as a valid JSON object representing the entire exam. Use EXACTLY this schema:
+    You MUST output your final response as a valid JSON object. Use EXACTLY this schema:
     {
-        "student_total_earned": 15.0,
-        "student_total_possible": 30.0,
         "questions": [
             {
                 "question_id": "Q1 - 1",
@@ -60,76 +52,109 @@ def grade_batch_exams(student_submissions, key_images):
             }
         ]
     }
+    If there are no questions to grade on this page, return {"questions": []}.
     """
 
-    master_report = f"--- BATCH GRADING ENGINE: GEMINI 2.0 FLASH (WHOLE-DOCUMENT JSON MODE) ---\n"
+    master_report = f"--- BATCH GRADING ENGINE: {model_id.upper()} (PAGE-BY-PAGE JSON MODE) ---\n"
 
     for student_name, student_images in student_submissions.items():
         student_report = f"\n\n========================================\n"
         student_report += f" GRADING REPORT: {student_name}\n"
         student_report += f"========================================\n\n"
         
-        # Build the native Google Payload (Uncompressed, High-Res Images)
-        content = [grading_prompt, "--- ENTIRE OFFICIAL ANSWER KEY ---"]
-        for img in key_images:
-            content.append({"mime_type": "image/jpeg", "data": img})
-            
-        content.append(f"--- ENTIRE STUDENT EXAM: {student_name} ---")
-        for img in student_images:
-            content.append({"mime_type": "image/jpeg", "data": img})
+        if len(student_images) != len(key_images):
+            student_report += f"WARNING: {student_name} has {len(student_images)} pages, but the Answer Key has {len(key_images)}. Grading matched pages only to avoid misalignment.\n\n"
 
-        for attempt in range(max_retries):
-            try:
-                print(f"Grading {student_name} (All Pages at Once) - Attempt {attempt + 1}...")
+        student_raw_earned = 0.0
+        student_raw_possible = 0.0
+        student_total_questions = 0
+
+        # PAGE-BY-PAGE CHUNKING (Prevents the 4000 Token Limit Error)
+        for page_idx, (key_page, student_page) in enumerate(zip(key_images, student_images)):
+            page_num = page_idx + 1
+            student_report += f"--- PAGE {page_num} ---\n"
+            
+            content = [{"type": "text", "text": grading_prompt}]
+            
+            content.append({"type": "text", "text": f"--- OFFICIAL ANSWER KEY (PAGE {page_num}) ---"})
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{key_page}"}
+            })
                 
-                # Direct API Call to Google
-                response = model.generate_content(content)
-                
-                # Parse the JSON
-                exam_data = json.loads(response.text)
-                questions = exam_data.get("questions", [])
-                
-                if not questions:
-                    student_report += "ERROR: No gradable questions found in this document.\n\n"
+            content.append({"type": "text", "text": f"--- {student_name} (PAGE {page_num}) ---"})
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{student_page}"}
+            })
+
+            for attempt in range(max_retries):
+                try:
+                    print(f"Grading {student_name} - Page {page_num} (Attempt {attempt + 1})...")
                     
-                for q in questions:
-                    student_report += f"* Question: {q.get('question_id')}\n"
-                    student_report += f"* Key Shows: {q.get('key_literal_transcription')}\n"
-                    student_report += f"* Student Wrote: {q.get('student_literal_transcription')}\n"
-                    student_report += f"* Verdict: {q.get('verdict')}\n"
-                    student_report += f"* Points: {q.get('points_earned')} / {q.get('points_possible')}\n"
-                    student_report += f"* Reasoning: {q.get('reasoning')}\n\n"
-                
-                # THE 30-POINT SCALER
-                raw_earned = float(exam_data.get("student_total_earned", 0))
-                raw_possible = float(exam_data.get("student_total_possible", 0))
-                
-                if raw_possible > 0:
-                    final_scaled_score = (raw_earned / raw_possible) * 30
-                else:
-                    final_scaled_score = 0.0
+                    response = client.chat.completions.create(
+                        model=model_id, 
+                        response_format={ "type": "json_object" },
+                        temperature=0.0, # Lobotomizes creativity to ensure literal reading
+                        messages=[{"role": "user", "content": content}]
+                    )
                     
-                final_scaled_score = round(final_scaled_score, 2)
-                
-                student_report += f"----------------------------------------\n"
-                student_report += f" FINAL EXAM TALLY: {student_name}\n"
-                student_report += f"----------------------------------------\n"
-                student_report += f"Total Questions Graded: {len(questions)}\n"
-                student_report += f"Raw AI Detection: {round(raw_earned, 2)} / {round(raw_possible, 2)}\n"
-                student_report += f"FINAL SCALED SCORE: {final_scaled_score} / 30\n"
-                student_report += f"========================================\n\n"
-                
-                break 
-                
-            except Exception as e:
-                if "429" in str(e) and attempt < max_retries - 1:
-                    print(f"Rate limited on {student_name}, waiting 10 seconds...")
-                    time.sleep(10) 
-                    continue 
-                
-                student_report += f"API ERROR DURING GRADING FOR {student_name}:\n{str(e)}\n\n"
-                break 
-                
+                    json_text = response.choices[0].message.content
+                    
+                    try:
+                        page_data = json.loads(json_text)
+                        questions = page_data.get("questions", [])
+                        
+                        if not questions:
+                            student_report += "No gradable questions found on this page.\n\n"
+                            
+                        for q in questions:
+                            student_report += f"* Question: {q.get('question_id')}\n"
+                            student_report += f"* Key Shows: {q.get('key_literal_transcription')}\n"
+                            student_report += f"* Student Wrote: {q.get('student_literal_transcription')}\n"
+                            student_report += f"* Verdict: {q.get('verdict')}\n"
+                            student_report += f"* Points: {q.get('points_earned')} / {q.get('points_possible')}\n"
+                            student_report += f"* Reasoning: {q.get('reasoning')}\n\n"
+                            
+                            student_raw_earned += float(q.get('points_earned', 0))
+                            student_raw_possible += float(q.get('points_possible', 0))
+                            student_total_questions += 1
+                            
+                    except json.JSONDecodeError:
+                        student_report += "ERROR: AI failed to output valid JSON for this page.\n\n"
+                        
+                    # SLEEP TO PREVENT AZURE 429 ERRORS
+                    print("Page graded successfully. Sleeping 15 seconds to cool down Azure limits...")
+                    time.sleep(15)
+                    break 
+                    
+                except Exception as e:
+                    if "429" in str(e) and attempt < max_retries - 1:
+                        print(f"Rate limited on {student_name} Page {page_num}, waiting 30 seconds...")
+                        time.sleep(30) 
+                        continue 
+                    
+                    student_report += f"API ERROR DURING GRADING FOR {student_name} PAGE {page_num}:\n{str(e)}\n\n"
+                    break 
+        
+        # ==========================================
+        # THE PERFECT 30-POINT SCALER
+        # ==========================================
+        if student_raw_possible > 0:
+            final_scaled_score = (student_raw_earned / student_raw_possible) * 30
+        else:
+            final_scaled_score = 0.0
+            
+        final_scaled_score = round(final_scaled_score, 2)
+        
+        student_report += f"----------------------------------------\n"
+        student_report += f" FINAL EXAM TALLY: {student_name}\n"
+        student_report += f"----------------------------------------\n"
+        student_report += f"Total Questions Graded: {student_total_questions}\n"
+        student_report += f"Raw AI Detection: {round(student_raw_earned, 2)} / {round(student_raw_possible, 2)}\n"
+        student_report += f"FINAL SCALED SCORE: {final_scaled_score} / 30\n"
+        student_report += f"========================================\n\n"
+        
         master_report += student_report
         
     return master_report
