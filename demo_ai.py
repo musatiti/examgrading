@@ -24,35 +24,46 @@ def grade_batch_exams(student_submissions, key_images):
     max_retries = 3
 
     # THE ANTI-LAZINESS JSON PROMPT
-    grading_prompt = """You are a robotic, highly strict grading algorithm. Your only goal is 100% accurate visual transcription and logic comparison.
+    grading_prompt = """You are a grading engine. Your only goal is 100% deterministic visual transcription and logic comparison. 
     
     I am providing you with exactly two images:
     1. The official Answer Key (for this specific page).
     2. The Student's Exam (for this specific page).
 
     CRITICAL GRADING RULES:
-    1. ZERO HALLUCINATION (LITERAL TRANSCRIPTION): Read exactly what the student wrote. Do not guess. If the key says 'a' and the student's 'a' looks like a 'c', transcribe it as 'c' and mark it INCORRECT.
-    2. STRICT COMPARISON: If the student's answer differs by even one character, letter, or logic gate, it is INCORRECT.
-    3. IGNORE THE ANSWER TABLE: Do NOT grade the summary "Answers table" grid at the bottom of the page. ONLY grade the individual questions where they are written.
-    4. NO RED INK: Ignore human grading marks (checkmarks, red Xs, written scores).
-    5. POINTS EXTRACTION: Calculate the exact point value per question based on explicit labels. If a section says "(15 points)" and has 10 questions, assign exactly 1.5 points. Correct = full points, Incorrect = 0 points.
+    1. ZERO HALLUCINATION (LITERAL TEXT): Read exactly what the student wrote. Do not guess or infer. If the key says 'a' and the student's 'a' looks like a 'c', transcribe it as 'c' and mark it INCORRECT.
+    2. VISUAL DIAGRAM MATCHING (CIRCUITS/DRAWINGS): For questions requiring a drawn logic circuit, DO NOT just describe the image. You must visually trace the topology. The student's drawing MUST have the exact same logic gates (AND, OR, XOR), wire connections, and input/output labels as the key. If a wire goes to the wrong gate, it is INCORRECT.
+    3. THE ANSWER TABLE IS THE SOURCE OF TRUTH: If the student filled out a summary "Answers Table" for multiple-choice questions, use the letters written in that table as their official answers. If the table is empty or missing, fall back to checking the circled answers next to the questions.
+    4. NO NEWLINES IN EXTRACTION: Never use newline characters (\n) inside question IDs or transcriptions. Format IDs cleanly (e.g., "Q1-1", "Q2-4").
+    5. STRICT POINT DEFAULT: Look for explicit point labels (e.g., "(15 points)" for 10 questions = 1.5 points each). IF AND ONLY IF you cannot find an explicit point label, default to EXACTLY 1.0 point per question. NEVER invent random decimals like 2.14.
+    6. NO RED INK: Ignore human checkmarks, red Xs, or written scores left by human graders.
     
     OUTPUT FORMAT:
-    You MUST output your final response as a valid JSON object. Use EXACTLY this schema:
+    You MUST output your final response as a valid JSON object. You MUST generate the "step_by_step_analysis" BEFORE the "verdict" to ensure you reason through the logic first. Use EXACTLY this schema:
     {
         "questions": [
             {
-                "question_id": "Q1 - 1",
+                "question_id": "Q1-1",
                 "key_literal_transcription": "b. lw $t0, 0($s0)",
-                "student_literal_transcription": "c. lw $t0, 0($s0)",
+                "student_literal_transcription": "c",
+                "step_by_step_analysis": "The key requires option 'b'. The student wrote 'c' in the answer table. The options do not match.",
                 "verdict": "INCORRECT",
                 "points_possible": 1.5,
-                "points_earned": 0.0,
-                "reasoning": "Student selected c instead of b."
+                "points_earned": 0.0
+            },
+            {
+                "question_id": "Q25",
+                "key_literal_transcription": "[Circuit Diagram with 3 AND gates, 1 OR gate, 1 XOR gate]",
+                "student_literal_transcription": "[Circuit Diagram with a single block labeled carry out]",
+                "step_by_step_analysis": "The key shows a detailed gate-level circuit. The student drew a simplified block diagram missing the specific logic gates. The topologies do not match.",
+                "verdict": "INCORRECT",
+                "points_possible": 2.0,
+                "points_earned": 0.0
             }
         ]
     }
     If there are no questions to grade on this page, return {"questions": []}.
+    
     """
 
     master_report = f"--- BATCH GRADING ENGINE: {model_id.upper()} (PAGE-BY-PAGE JSON MODE) ---\n"
