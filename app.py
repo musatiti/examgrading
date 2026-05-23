@@ -1,12 +1,16 @@
+import os
 import base64
-import fitz  # PyMuPDF
-from flask import Flask, render_template_string, request
-from demo_ai import grade_batch_exams
+from flask import Flask, request, render_template_string
+from demo_ai import grade_batch_exams 
 
 app = Flask(__name__)
+app.secret_key = "super_secret_key"
 
-# --- EMBEDDED HTML TEMPLATE ---
-HTML_TEMPLATE = """
+# ==========================================
+# FRONTEND: HTML TEMPLATES (EMBEDDED)
+# ==========================================
+
+INDEX_HTML = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,80 +18,138 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Exam Grader</title>
     <style>
-        body { font-family: sans-serif; margin: 40px; }
-        form { margin-bottom: 20px; padding: 20px; border: 1px solid #ccc; max-width: 600px; }
-        div { margin-bottom: 15px; }
-        label { font-weight: bold; display: block; margin-bottom: 5px; }
-        pre { background: #f4f4f4; padding: 15px; white-space: pre-wrap; word-wrap: break-word; }
+        body { font-family: Arial, sans-serif; background-color: #f4f4f9; margin: 0; padding: 0; }
+        .navbar { background-color: #333; overflow: hidden; padding: 14px 20px; margin-bottom: 20px; }
+        .navbar a { color: white; text-decoration: none; padding: 14px 20px; font-weight: bold; }
+        .navbar a:hover { background-color: #ddd; color: black; border-radius: 4px; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        h1 { color: #0056b3; text-align: center; }
+        form { display: flex; flex-direction: column; gap: 15px; margin-top: 20px; }
+        label { font-weight: bold; }
+        input[type="file"] { padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        button { background-color: #0056b3; color: white; padding: 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold; }
+        button:hover { background-color: #004494; }
     </style>
 </head>
 <body>
-    <h1>AI Exam Grader</h1>
-    <form method="POST" enctype="multipart/form-data">
-        <div>
-            <label>Upload Answer Key (Image or PDF):</label>
-            <input type="file" name="key_files" accept="image/*, application/pdf" multiple required>
-        </div>
-        <div>
-            <label>Upload Student Exams (Images or PDFs):</label>
-            <input type="file" name="student_files" accept="image/*, application/pdf" multiple required>
-        </div>
-        <button type="submit">Grade Exams</button>
-    </form>
-
-    {% if result %}
-        <h2>Grading Results:</h2>
-        <pre>{{ result }}</pre>
-    {% endif %}
+    <div class="navbar">
+        <a href="/">Grader Home</a>
+        <a href="/syllabus">Course Syllabus</a>
+    </div>
+    <div class="container">
+        <h1>AI Exam Grader</h1>
+        <form action="/grade" method="POST" enctype="multipart/form-data">
+            <label for="key_files">Upload Answer Key (Images or PDF):</label>
+            <input type="file" name="key_files" id="key_files" multiple required>
+            
+            <label for="student_files">Upload Student Exams (Images or PDFs):</label>
+            <input type="file" name="student_files" id="student_files" multiple required>
+            
+            <button type="submit">Grade Exams</button>
+        </form>
+    </div>
 </body>
 </html>
 """
 
-def pdf_to_base64_images(file_storage):
-    """Takes an uploaded PDF file, slices it into pages, and returns base64 images."""
-    base64_images = []
-    pdf_document = fitz.open(stream=file_storage.read(), filetype="pdf")
-    
-    for page_num in range(len(pdf_document)):
-        page = pdf_document.load_page(page_num)
-        # Zoom in 2x for high-resolution images so the AI can read small handwriting
-        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2)) 
-        img_bytes = pix.tobytes("jpeg")
-        b64 = base64.b64encode(img_bytes).decode("utf-8")
-        base64_images.append(b64)
-        
-    pdf_document.close()
-    return base64_images
+SYLLABUS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Course Syllabus - CS451</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f4f9; margin: 0; padding: 0; }
+        .navbar { background-color: #333; overflow: hidden; padding: 14px 20px; margin-bottom: 20px; }
+        .navbar a { color: white; text-decoration: none; padding: 14px 20px; font-weight: bold; }
+        .navbar a:hover { background-color: #ddd; color: black; border-radius: 4px; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        h1 { color: #0056b3; border-bottom: 2px solid #0056b3; padding-bottom: 10px; }
+        h2 { color: #333; margin-top: 25px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #0056b3; color: white; }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="/">Grader Home</a>
+        <a href="/syllabus">Course Syllabus</a>
+    </div>
+    <div class="container">
+        <h1>CS451: Computer Architecture</h1>
+        <p><strong>Institution:</strong> Jordan University of Science and Technology, Faculty of Computer & Information Technology</p>
+        <p><strong>Semester:</strong> First Semester 2025-2026 | <strong>Credits:</strong> 3 | <strong>Level:</strong> JNQF 7</p>
+        <h2>Course Description</h2>
+        <p>The role of performance, essential notions of computer systems design, datapath and control of processor, memory hierarchies, control units, registers, data transfer and buses. The characteristics of instruction sets, pipeline techniques, high-speed memories like cache, and multiprocessors.</p>
+        <h2>Instructors & Schedule</h2>
+        <ul>
+            <li><strong>Prof. Yahya Tashtoush</strong> (A1L3) | yahya-t@just.edu.jo</li>
+            <li><strong>Dr. Ala'a Jararwah</strong> (A1L3)</li>
+        </ul>
+        <p><strong>Lectures:</strong> Sunday & Tuesday, 11:00 - 12:00 (Rooms CH2106 & C3013)</p>
+        <h2>Course Outline</h2>
+        <table>
+            <tr><th>Weeks</th><th>Topic</th><th>Readings</th></tr>
+            <tr><td>Weeks 1-4</td><td>Computer Abstractions and Technology</td><td>Chapter 1</td></tr>
+            <tr><td>Weeks 5-8</td><td>Instructions: Language of the Computer</td><td>Chapter 2</td></tr>
+            <tr><td>Weeks 9-10</td><td>Arithmetic for Computers</td><td>Chapter 3</td></tr>
+            <tr><td>Weeks 10-14</td><td>The Processor</td><td>Chapter 4</td></tr>
+        </table>
+        <h2>Evaluation</h2>
+        <table>
+            <tr><th>Assessment Tool</th><th>Weight</th></tr>
+            <tr><td>First Exam</td><td>30%</td></tr>
+            <tr><td>Second Exam</td><td>30%</td></tr>
+            <tr><td>Final Exam</td><td>40%</td></tr>
+        </table>
+    </div>
+</body>
+</html>
+"""
 
-@app.route("/", methods=["GET", "POST"])
+# ==========================================
+# SERVER: FLASK ROUTING
+# ==========================================
+
+@app.route('/')
 def index():
-    if request.method == "POST":
-        # Process Answer Key files
-        key_files = request.files.getlist("key_files") 
-        key_images = []
-        for file in key_files:
-            if file.filename:
-                if file.filename.lower().endswith('.pdf'):
-                    key_images.extend(pdf_to_base64_images(file))
-                else:
-                    key_images.append(base64.b64encode(file.read()).decode('utf-8'))
+    return render_template_string(INDEX_HTML)
 
-        # Process Student Exam files into a dictionary
-        student_files = request.files.getlist("student_files") 
+@app.route('/syllabus')
+def syllabus():
+    return render_template_string(SYLLABUS_HTML)
+
+@app.route('/grade', methods=['POST'])
+def grade():
+    try:
+        key_files = request.files.getlist('key_files')
+        key_images = [base64.b64encode(f.read()).decode('utf-8') for f in key_files if f.filename]
+        
+        if not key_images:
+            return "Error: No Answer Key uploaded."
+
+        student_files = request.files.getlist('student_files')
         student_submissions = {}
         
-        for file in student_files:
-            if file.filename:
-                if file.filename.lower().endswith('.pdf'):
-                    student_submissions[file.filename] = pdf_to_base64_images(file)
-                else:
-                    student_submissions[file.filename] = [base64.b64encode(file.read()).decode('utf-8')]
+        for f in student_files:
+            if f.filename:
+                b64_img = base64.b64encode(f.read()).decode('utf-8')
+                if f.filename not in student_submissions:
+                    student_submissions[f.filename] = []
+                student_submissions[f.filename].append(b64_img)
 
-        # Run the grading loop
-        result = grade_batch_exams(student_submissions, key_images)
-        return render_template_string(HTML_TEMPLATE, result=result)
+        if not student_submissions:
+            return "Error: No Student Exams uploaded."
 
-    return render_template_string(HTML_TEMPLATE, result=None)
+        # Calls the AI logic from your separate demo_ai.py file
+        final_report = grade_batch_exams(student_submissions, key_images)
+        
+        return f"<a href='/' style='font-family: Arial; padding: 10px; background: #333; color: white; text-decoration: none; border-radius: 4px;'>&larr; Back to Grader</a><br><br><pre style='font-family: monospace; background: #f4f4f9; padding: 20px;'>{final_report}</pre>"
+        
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)  # nosec B104
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
