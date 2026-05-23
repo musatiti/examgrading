@@ -36,7 +36,7 @@ INDEX_HTML = """
 <body>
     <div class="navbar">
         <a href="/">Grader Home</a>
-        <a href="/syllabus">Course Syllabus</a>
+        <a href="/syllabus">Course Syllabi</a>
     </div>
     <div class="container">
         <h1>AI Exam Grader</h1>
@@ -54,13 +54,51 @@ INDEX_HTML = """
 </html>
 """
 
-SYLLABUS_HTML = """
+# THE NEW DIRECTORY MENU
+SYLLABUS_LIST_HTML = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Course Syllabus - CS451</title>
+    <title>Course Syllabi</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f4f9; margin: 0; padding: 0; }
+        .navbar { background-color: #333; overflow: hidden; padding: 14px 20px; margin-bottom: 20px; }
+        .navbar a { color: white; text-decoration: none; padding: 14px 20px; font-weight: bold; }
+        .navbar a:hover { background-color: #ddd; color: black; border-radius: 4px; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        h1 { color: #0056b3; border-bottom: 2px solid #0056b3; padding-bottom: 10px; }
+        .course-list { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+        .course-list a { padding: 15px; background: #e9ecef; border-left: 5px solid #0056b3; text-decoration: none; color: #333; font-weight: bold; border-radius: 0 4px 4px 0; transition: background 0.2s; }
+        .course-list a:hover { background: #d3d9df; }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="/">Grader Home</a>
+        <a href="/syllabus">Course Syllabi</a>
+    </div>
+    <div class="container">
+        <h1>Select a Syllabus</h1>
+        <p>Choose a course below to view its grading policies and schedule.</p>
+        <div class="course-list">
+            <a href="/syllabus/cs451">CS451: Computer Architecture</a>
+            <a href="#">More courses can be added here...</a>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+# THE SPECIFIC CS451 SYLLABUS
+CS451_SYLLABUS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS451 Syllabus</title>
     <style>
         body { font-family: Arial, sans-serif; background-color: #f4f4f9; margin: 0; padding: 0; }
         .navbar { background-color: #333; overflow: hidden; padding: 14px 20px; margin-bottom: 20px; }
@@ -72,14 +110,17 @@ SYLLABUS_HTML = """
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
         th { background-color: #0056b3; color: white; }
+        .back-link { display: inline-block; margin-bottom: 20px; text-decoration: none; color: #0056b3; font-weight: bold; }
+        .back-link:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
     <div class="navbar">
         <a href="/">Grader Home</a>
-        <a href="/syllabus">Course Syllabus</a>
+        <a href="/syllabus">Course Syllabi</a>
     </div>
     <div class="container">
+        <a href="/syllabus" class="back-link">&larr; Back to Syllabus List</a>
         <h1>CS451: Computer Architecture</h1>
         <p><strong>Institution:</strong> Jordan University of Science and Technology, Faculty of Computer & Information Technology</p>
         <p><strong>Semester:</strong> First Semester 2025-2026 | <strong>Credits:</strong> 3 | <strong>Level:</strong> JNQF 7</p>
@@ -119,9 +160,15 @@ SYLLABUS_HTML = """
 def index():
     return render_template_string(INDEX_HTML)
 
+# Shows the list of syllabi
 @app.route('/syllabus')
-def syllabus():
-    return render_template_string(SYLLABUS_HTML)
+def syllabus_list():
+    return render_template_string(SYLLABUS_LIST_HTML)
+
+# Shows the specific CS451 syllabus
+@app.route('/syllabus/cs451')
+def syllabus_cs451():
+    return render_template_string(CS451_SYLLABUS_HTML)
 
 @app.route('/grade', methods=['POST'])
 def grade():
@@ -145,7 +192,6 @@ def grade():
         if not student_submissions:
             return "Error: No Student Exams uploaded."
 
-        # Calls the AI logic from your separate demo_ai.py file
         final_report = grade_batch_exams(student_submissions, key_images)
         
         return f"<a href='/' style='font-family: Arial; padding: 10px; background: #333; color: white; text-decoration: none; border-radius: 4px;'>&larr; Back to Grader</a><br><br><pre style='font-family: monospace; background: #f4f4f9; padding: 20px;'>{final_report}</pre>"
