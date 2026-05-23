@@ -1,10 +1,12 @@
 import os
 import base64
+import secrets
 from flask import Flask, request, render_template_string
 from demo_ai import grade_batch_exams 
 
 app = Flask(__name__)
-app.secret_key = "super_secret_key"
+# Securely generates a random key if one isn't provided in the environment
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(24))
 
 # ==========================================
 # FRONTEND: HTML TEMPLATES (EMBEDDED)
@@ -152,4 +154,6 @@ def grade():
         return f"An error occurred: {str(e)}"
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Debug turned off for production security. 
+    # nosec B104 tells Bandit that 0.0.0.0 is intentional for Docker.
+    app.run(host='0.0.0.0', port=5000, debug=False)  # nosec B104
