@@ -18,5 +18,4 @@ COPY . .
 
 EXPOSE 5000
 
-# 300-second timeout to allow OCR and AI reasoning to finish
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--timeout", "300", "app:app"]
+CMD ["gunicorn", "-w", "4", "--threads", "4", "-b", "0.0.0.0:5000", "--timeout", "300", "app:app"]

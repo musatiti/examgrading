@@ -3,6 +3,7 @@ import time
 import json
 from openai import OpenAI
 
+<<<<<<< HEAD
 # حطينا التوكن هون مباشرة للسهولة
 GITHUB_TOKEN = "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"
 
@@ -18,13 +19,33 @@ def grade_batch_exams(student_submissions, key_images):
     client = OpenAI(
         base_url="https://models.inference.ai.azure.com",
         api_key=GITHUB_TOKEN,
+=======
+def grade_batch_exams(student_submissions, key_images):
+    """
+    Expects:
+    - student_submissions: A dictionary {"Student_1.pdf": [img1, img2, img3]}
+    - key_images: A list of base64 images for the Answer Key
+    """
+    github_token = os.getenv("GITHUB_TOKEN")
+    
+    if not github_token:
+        return "API ERROR: GITHUB_TOKEN environment variable not found."
+
+    client = OpenAI(
+        base_url="https://models.inference.ai.azure.com",
+        api_key=github_token,
+>>>>>>> 4e6cd8e0f0c4a521577d4ac76ef7cad7606edfdd
         timeout=300.0, 
     )
 
     model_id = "gpt-4o"
     max_retries = 3
 
+<<<<<<< HEAD
     # التعليمات الموجهة للذكاء الاصطناعي
+=======
+    # THE ANTI-LAZINESS JSON PROMPT
+>>>>>>> 4e6cd8e0f0c4a521577d4ac76ef7cad7606edfdd
     grading_prompt = """You are a grading engine. Your only goal is 100% deterministic visual transcription and logic comparison. 
     
     I am providing you with exactly two images:
@@ -51,10 +72,26 @@ def grade_batch_exams(student_submissions, key_images):
                 "verdict": "INCORRECT",
                 "points_possible": 1.5,
                 "points_earned": 0.0
+<<<<<<< HEAD
+=======
+            },
+            {
+                "question_id": "Q25",
+                "key_literal_transcription": "[Circuit Diagram with 3 AND gates, 1 OR gate, 1 XOR gate]",
+                "student_literal_transcription": "[Circuit Diagram with a single block labeled carry out]",
+                "step_by_step_analysis": "The key shows a detailed gate-level circuit. The student drew a simplified block diagram missing the specific logic gates. The topologies do not match.",
+                "verdict": "INCORRECT",
+                "points_possible": 2.0,
+                "points_earned": 0.0
+>>>>>>> 4e6cd8e0f0c4a521577d4ac76ef7cad7606edfdd
             }
         ]
     }
     If there are no questions to grade on this page, return {"questions": []}.
+<<<<<<< HEAD
+=======
+    
+>>>>>>> 4e6cd8e0f0c4a521577d4ac76ef7cad7606edfdd
     """
 
     master_report = f"--- BATCH GRADING ENGINE: {model_id.upper()} (PAGE-BY-PAGE JSON MODE) ---\n"
@@ -66,6 +103,7 @@ def grade_batch_exams(student_submissions, key_images):
         
         if len(student_images) != len(key_images):
             student_report += f"WARNING: {student_name} has {len(student_images)} pages, but the Answer Key has {len(key_images)}. Grading matched pages only to avoid misalignment.\n\n"
+<<<<<<< HEAD
 
         student_raw_earned = 0.0
         student_raw_possible = 0.0
@@ -200,3 +238,99 @@ def extract_student_info(student_image_b64):
     except Exception as e:
         print(f"extract_student_info error: {e}")
         return None, None
+=======
+
+        student_raw_earned = 0.0
+        student_raw_possible = 0.0
+        student_total_questions = 0
+
+        # PAGE-BY-PAGE CHUNKING (Prevents the 4000 Token Limit Error)
+        for page_idx, (key_page, student_page) in enumerate(zip(key_images, student_images)):
+            page_num = page_idx + 1
+            student_report += f"--- PAGE {page_num} ---\n"
+            
+            content = [{"type": "text", "text": grading_prompt}]
+            
+            content.append({"type": "text", "text": f"--- OFFICIAL ANSWER KEY (PAGE {page_num}) ---"})
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{key_page}"}
+            })
+                
+            content.append({"type": "text", "text": f"--- {student_name} (PAGE {page_num}) ---"})
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{student_page}"}
+            })
+
+            for attempt in range(max_retries):
+                try:
+                    print(f"Grading {student_name} - Page {page_num} (Attempt {attempt + 1})...")
+                    
+                    response = client.chat.completions.create(
+                        model=model_id, 
+                        response_format={ "type": "json_object" },
+                        temperature=0.0, # Lobotomizes creativity to ensure literal reading
+                        messages=[{"role": "user", "content": content}]
+                    )
+                    
+                    json_text = response.choices[0].message.content
+                    
+                    try:
+                        page_data = json.loads(json_text)
+                        questions = page_data.get("questions", [])
+                        
+                        if not questions:
+                            student_report += "No gradable questions found on this page.\n\n"
+                            
+                        for q in questions:
+                            student_report += f"* Question: {q.get('question_id')}\n"
+                            student_report += f"* Key Shows: {q.get('key_literal_transcription')}\n"
+                            student_report += f"* Student Wrote: {q.get('student_literal_transcription')}\n"
+                            student_report += f"* Verdict: {q.get('verdict')}\n"
+                            student_report += f"* Points: {q.get('points_earned')} / {q.get('points_possible')}\n"
+                            student_report += f"* Reasoning: {q.get('reasoning')}\n\n"
+                            
+                            student_raw_earned += float(q.get('points_earned', 0))
+                            student_raw_possible += float(q.get('points_possible', 0))
+                            student_total_questions += 1
+                            
+                    except json.JSONDecodeError:
+                        student_report += "ERROR: AI failed to output valid JSON for this page.\n\n"
+                        
+                    # SLEEP TO PREVENT AZURE 429 ERRORS
+                    print("Page graded successfully. Sleeping 15 seconds to cool down Azure limits...")
+                    time.sleep(15)
+                    break 
+                    
+                except Exception as e:
+                    if "429" in str(e) and attempt < max_retries - 1:
+                        print(f"Rate limited on {student_name} Page {page_num}, waiting 30 seconds...")
+                        time.sleep(30) 
+                        continue 
+                    
+                    student_report += f"API ERROR DURING GRADING FOR {student_name} PAGE {page_num}:\n{str(e)}\n\n"
+                    break 
+        
+        # ==========================================
+        # THE PERFECT 30-POINT SCALER
+        # ==========================================
+        if student_raw_possible > 0:
+            final_scaled_score = (student_raw_earned / student_raw_possible) * 30
+        else:
+            final_scaled_score = 0.0
+            
+        final_scaled_score = round(final_scaled_score, 2)
+        
+        student_report += f"----------------------------------------\n"
+        student_report += f" FINAL EXAM TALLY: {student_name}\n"
+        student_report += f"----------------------------------------\n"
+        student_report += f"Total Questions Graded: {student_total_questions}\n"
+        student_report += f"Raw AI Detection: {round(student_raw_earned, 2)} / {round(student_raw_possible, 2)}\n"
+        student_report += f"FINAL SCALED SCORE: {final_scaled_score} / 30\n"
+        student_report += f"========================================\n\n"
+        
+        master_report += student_report
+        
+    return master_report
+>>>>>>> 4e6cd8e0f0c4a521577d4ac76ef7cad7606edfdd
