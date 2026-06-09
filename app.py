@@ -3,7 +3,7 @@ from werkzeug.utils import secure_filename
 from flask_sqlalchemy import SQLAlchemy
 import urllib
 import os
-import base64  # ضفنا هاي المكتبة عشان نشفر الصور للذكاء الاصطناعي
+import base64
 from demo_ai import grade_batch_exams, extract_student_info
 import uuid
 from datetime import datetime
@@ -18,9 +18,6 @@ import time
 app = Flask(__name__)
 app.secret_key = 'just_secret_key_2026'
 
-# ==========================================
-# 1. إعدادات الاتصال بقاعدة بيانات SQL Server
-# ==========================================
 SERVER_NAME = r'DESKTOP-QRPPRUD' 
 DATABASE_NAME = 'visiongrader'
 
@@ -36,9 +33,6 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
-# ==========================================
-# 2. بناء الجداول في قاعدة البيانات
-# ==========================================
 class User(db.Model):
     __tablename__ = 'users'
     UserId   = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -76,22 +70,15 @@ with app.app_context():
         new_admin = User(Username='admin', Password='just123')
         db.session.add(new_admin)
         db.session.commit()
-        print("✅ تم إنشاء جدول المستخدمين وإضافة حساب admin بنجاح!")
+        print("Successfully created the users table and added the admin account!")
 
-# ==========================================
-# 3. إعدادات رفع الملفات
-# ==========================================
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# دالة صغيرة لتحويل الصورة لـ Base64
 def encode_image_to_base64(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
-# ==========================================
-# 4. مسارات الموقع (Routes)
-# ==========================================
 @app.route("/exams", methods=["GET", "POST"])
 def exams():
     if not session.get('logged_in'):
@@ -141,7 +128,7 @@ def login():
             session['user_id']   = found_user.UserId
             return redirect(url_for('exams'))
         else:
-            error = "خطأ في بيانات الدخول"
+            error = "Login data error"
 
     return render_template("login.html", error=error)
 
@@ -157,7 +144,6 @@ def pdf_to_base64_images(pdf_path):
     return images
 
 
-# Global dict to track progress per session
 grading_progress = {}
 
 @app.route("/grading/progress/<session_id>")
@@ -200,7 +186,6 @@ def grading():
             for idx, student_file in enumerate(student_files):
                 student_filename = secure_filename(student_file.filename)
 
-                # Update progress
                 grading_progress[session_id] = {
                     "current":  idx + 1,
                     "total":    total,
@@ -270,7 +255,6 @@ def grading():
                         "error":    str(e)
                     })
 
-            # Mark done
             grading_progress[session_id] = {
                 "current":  total,
                 "total":    total,
