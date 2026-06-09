@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Results | Visionary Graders</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-blue: #003366;
+            --accent-blue: #007bff;
+            --hover-blue: #004a99;
+        }
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #e0eafc 0%, #cfdef3 100%);
+            margin: 0;
+            min-height: 100vh;
+        }
+        header {
+            background: white;
+            padding: 10px 50px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.1);
+        }
+        .logo-container { display: flex; align-items: center; gap: 15px; }
+        .logo-container img { height: 100px; }
+        .logout-btn {
+            background: #ff4d4d;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            transition: background 0.3s ease;
+        }
+        .logout-btn:hover { background: #cc0000; }
+        .nav-links { display: flex; gap: 15px; }
+        .nav-link {
+            color: var(--primary-blue);
+            text-decoration: none;
+            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+        .nav-link:hover { background: #e0eafc; }
+        .nav-link.active { background: var(--primary-blue); color: white; }
+        .main-content {
+            padding: 60px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            max-width: 1000px;
+            width: 100%;
+            background: rgba(255,255,255,0.95);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+        }
+        h1 { color: var(--primary-blue); margin-top: 0; }
+        table { width: 100%; border-collapse: collapse; }
+        thead tr { background: var(--primary-blue); color: white; }
+        th, td { padding: 14px 18px; text-align: left; font-size: 0.9em; }
+        tbody tr { border-bottom: 1px solid #e2e8f0; transition: background 0.2s; }
+        tbody tr:hover { background: #f0f7ff; }
+        .badge {
+            background: #e0eafc;
+            color: var(--primary-blue);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+        .score-high { color: #2e7d32; font-weight: 600; }
+        .score-mid  { color: #e65100; font-weight: 600; }
+        .score-low  { color: #c62828; font-weight: 600; }
+        .btn-view {
+            width: auto;
+            background: var(--accent-blue);
+            color: white;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 600;
+            font-size: 0.82em;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: background 0.2s;
+            box-shadow: none;
+        }
+        .btn-view:hover { background: #0056b3; }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #a0aec0;
+        }
+        .filter-bar {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 25px;
+            align-items: center;
+        }
+        .filter-bar select {
+            padding: 8px 14px;
+            border: 2px solid #cbd5e0;
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.9em;
+            outline: none;
+            color: var(--primary-blue);
+        }
+        .filter-bar select:focus { border-color: var(--accent-blue); }
+    </style>
+</head>
+<body>
+<header>
+    <div class="logo-container">
+        <img src="{{ url_for('static', filename='team_logo.png') }}" alt="Team">
+        <div class="team-info"><h2>Visionary Graders</h2></div>
+    </div>
+    <div style="display:flex; align-items:center; gap:30px;">
+        <nav class="nav-links">
+            <a href="/exams"    class="nav-link">Exams</a>
+            <a href="/grading"  class="nav-link">Grading</a>
+            <a href="/students" class="nav-link">Students</a>
+            <a href="/results"  class="nav-link active">Results</a>
+        </nav>
+        <a href="/logout" class="logout-btn">Logout</a>
+    </div>
+</header>
+
+<div class="main-content">
+    <div class="container">
+        <h1>Results</h1>
+
+        <!-- Filter by exam -->
+        <div class="filter-bar">
+            <label style="font-weight:600; color:var(--primary-blue);">Filter by Exam:</label>
+            <select onchange="filterExam(this.value)">
+                <option value="all">All Exams</option>
+                {% for result, student, exam in results %}
+                    {% if loop.changed(exam.ExamId) %}
+                    <option value="{{ exam.ExamId }}">{{ exam.Subject }} — {{ exam.Title }}</option>
+                    {% endif %}
+                {% endfor %}
+            </select>
+        </div>
+
+        {% if results %}
+        <table id="resultsTable">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Student Name</th>
+                    <th>University ID</th>
+                    <th>Exam</th>
+                    <th>Score / 30</th>
+                    <th>Graded At</th>
+                    <th>Report</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for result, student, exam in results %}
+                <tr data-exam="{{ exam.ExamId }}">
+                    <td>{{ loop.index }}</td>
+                    <td>{{ student.FullName }}</td>
+                    <td><span class="badge">{{ student.StudentCode }}</span></td>
+                    <td>{{ exam.Subject }} — {{ exam.Title }}</td>
+                    <td>
+                        {% if result.Score is not none %}
+                            {% if result.Score >= 20 %}
+                                <span class="score-high">{{ result.Score }}</span>
+                            {% elif result.Score >= 15 %}
+                                <span class="score-mid">{{ result.Score }}</span>
+                            {% else %}
+                                <span class="score-low">{{ result.Score }}</span>
+                            {% endif %}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td>{{ result.GradedAt.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        <a href="/results/{{ result.ResultId }}" class="btn-view">View Report</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <p>No results yet. Start grading from the <a href="/grading" style="color:var(--accent-blue);">Grading page</a>.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function filterExam(value) {
+    const rows = document.querySelectorAll('#resultsTable tbody tr');
+    rows.forEach(row => {
+        row.style.display = (value === 'all' || row.dataset.exam === value) ? '' : 'none';
+    });
+}
+</script>
+</body>
+</html>

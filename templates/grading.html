@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visionary Graders | AI Exam System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root { 
+            --primary-blue: #003366; 
+            --accent-blue: #007bff; 
+            --bg-color: #f8f9fa; 
+            --hover-blue: #004a99;
+        }
+
+        body { 
+            font-family: 'Poppins', sans-serif; 
+            background: linear-gradient(135deg, #e0eafc 0%, #cfdef3 100%); 
+            margin: 0; 
+            min-height: 100vh; 
+        }
+
+        header { 
+            background: white; 
+            padding: 10px 50px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            box-shadow: 0 2px 15px rgba(0,0,0,0.1); 
+        }
+
+        .logo-container { display: flex; align-items: center; gap: 15px; }
+        .logo-container img { height: 100px; }
+
+        .main-content { padding: 60px 20px; display: flex; flex-direction: column; align-items: center; }
+        
+        .container { 
+            max-width: 900px; 
+            width: 100%; 
+            background: rgba(255, 255, 255, 0.95); 
+            padding: 40px; 
+            border-radius: 20px; 
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1); 
+        }
+
+        .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px; }
+
+        /* --- تعديلات كروت الرفع --- */
+        .file-card { 
+            border: 2px dashed #cbd5e0; 
+            padding: 30px; 
+            border-radius: 15px; 
+            text-align: center; 
+            background: #fff; 
+            transition: all 0.3s ease; /* لجعل الحركة ناعمة */
+            cursor: pointer;
+        }
+
+        .file-card:hover {
+            border-color: var(--accent-blue);
+            transform: translateY(-5px); /* رفع الكرت للأعلى */
+            box-shadow: 0 10px 20px rgba(0, 123, 255, 0.15);
+            background: #f0f7ff;
+        }
+
+        .file-card label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: var(--primary-blue);
+            cursor: pointer;
+        }
+
+        /* --- تعديلات الزر الرئيسي --- */
+        button { 
+            width: 100%; 
+            background: var(--primary-blue); 
+            color: white; 
+            border: none; 
+            padding: 18px; 
+            font-size: 1.1em; 
+            font-weight: 600; 
+            border-radius: 10px; 
+            cursor: pointer; 
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        button:hover {
+            background: var(--hover-blue);
+            transform: scale(1.01); /* تكبير بسيط جداً */
+            box-shadow: 0 6px 15px rgba(0, 51, 102, 0.3);
+        }
+
+        button:active {
+            transform: scale(0.98); /* حركة ضغطة الزر */
+        }
+
+        /* --- تعديلات زر الخروج --- */
+        .logout-btn { 
+            background: #ff4d4d; 
+            color: white; 
+            padding: 10px 20px; 
+            text-decoration: none; 
+            border-radius: 5px; 
+            font-weight: bold; 
+            transition: background 0.3s ease;
+        }
+
+        .logout-btn:hover {
+            background: #cc0000;
+        }
+
+        #loading { display: none; text-align: center; margin-top: 30px; }
+        pre { background: #1a202c; color: #edf2f7; padding: 25px; border-radius: 12px; white-space: pre-wrap; }
+        .nav-links { display: flex; gap: 15px; }
+
+.nav-link {
+    color: var(--primary-blue);
+    text-decoration: none;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 8px;
+    transition: background 0.2s;
+}
+
+.nav-link:hover { background: #e0eafc; }
+.nav-link.active { background: var(--primary-blue); color: white; }.progress-container {
+    display: none;
+    margin-top: 30px;
+    background: #f0f7ff;
+    padding: 25px;
+    border-radius: 12px;
+    border-left: 4px solid var(--primary-blue);
+}
+.progress-bar-track {
+    background: #e2e8f0;
+    border-radius: 20px;
+    height: 14px;
+    margin: 12px 0;
+    overflow: hidden;
+}
+.progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary-blue), var(--accent-blue));
+    border-radius: 20px;
+    width: 0%;
+    transition: width 0.4s ease;
+}
+.progress-text {
+    font-size: 0.9em;
+    color: var(--primary-blue);
+    font-weight: 600;
+}
+.progress-filename {
+    font-size: 0.82em;
+    color: #718096;
+    margin-top: 4px;
+}
+    </style>
+</head>
+<body>
+<header>
+    <div class="logo-container">
+        <img src="{{ url_for('static', filename='team_logo.png') }}" alt="Team">
+        <div class="team-info"><h2>Visionary Graders</h2></div>
+    </div>
+    <div style="display:flex; align-items:center; gap:30px;">
+       <nav class="nav-links">
+   <a href="/exams"    class="nav-link">Exams</a>
+<a href="/grading"  class="nav-link active">Grading</a>
+<a href="/students" class="nav-link">Students</a>
+<a href="/results"  class="nav-link">Results</a>
+</nav>
+        <a href="/logout" class="logout-btn">Logout</a>
+    </div>
+</header>
+    <div class="main-content">
+        <div class="container">
+        <h1 style="text-align:center; color:var(--primary-blue);">AI Exam Grading System</h1>
+
+{% if not exams %}
+<div style="text-align:center; padding:40px; color:#a0aec0;">
+    <p>No exams found. <a href="/exams" style="color:var(--accent-blue);">Create an exam first.</a></p>
+</div>
+{% else %}
+
+<form id="gradeForm" method="POST" enctype="multipart/form-data">
+    <input type="hidden" name="session_id" id="session_id">
+
+    <div style="margin-bottom:25px;">
+        <label style="display:block; font-weight:600; color:var(--primary-blue); margin-bottom:8px;">Select Exam</label>
+        <select name="exam_id" required style="width:100%; padding:12px 14px; border:2px solid #cbd5e0; border-radius:8px; font-family:'Poppins',sans-serif; font-size:0.95em; outline:none; color:var(--primary-blue);">
+            <option value="" disabled selected>-- Choose an exam --</option>
+            {% for exam in exams %}
+            <option value="{{ exam.ExamId }}" {% if selected_exam_id == exam.ExamId %}selected{% endif %}>
+                {{ exam.Subject }} — {{ exam.Title }} ({{ exam.ExamDate }})
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="upload-grid">
+        <div class="file-card">
+            <label for="student-upload">📄 Student Answer Sheets</label>
+            <input type="file" id="student-upload" name="student" accept=".pdf" multiple required>
+            <p style="font-size:0.8em; color:#718096; margin-top:8px;">You can select multiple PDF files</p>
+        </div>
+        <div class="file-card">
+            <label for="key-upload">🔑 Model Answer Key</label>
+            <input type="file" id="key-upload" name="key" accept=".pdf" required>
+        </div>
+    </div>
+    <button type="submit" id="submitBtn" onclick="startGrading()">Start AI Analysis</button>
+</form>
+
+<!-- Progress Bar -->
+<div class="progress-container" id="progressContainer">
+    <div class="progress-text" id="progressText">Preparing...</div>
+    <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="progressFill"></div>
+    </div>
+    <div class="progress-filename" id="progressFilename">Starting...</div>
+</div>
+
+{% endif %}
+
+{% if student_info %}
+<div style="margin-top:30px; padding:20px; background:#f0f7ff; border-radius:12px; border-left:4px solid var(--primary-blue);">
+    <h3 style="margin:0 0 10px; color:var(--primary-blue);">Student Detected</h3>
+    <p style="margin:4px 0;"><strong>Name:</strong> {{ student_info.name }}</p>
+    <p style="margin:4px 0;"><strong>University ID:</strong> {{ student_info.code }}</p>
+    <p style="margin:4px 0;"><strong>Final Score:</strong> {{ student_info.score }} / 30</p>
+</div>
+{% endif %}
+
+{% if results_list %}
+<div style="margin-top:30px;">
+    <h2 style="color:var(--primary-blue);">Grading Summary</h2>
+    <table style="width:100%; border-collapse:collapse;">
+        <thead>
+            <tr style="background:var(--primary-blue); color:white;">
+                <th style="padding:12px 16px; text-align:left;">#</th>
+                <th style="padding:12px 16px; text-align:left;">File</th>
+                <th style="padding:12px 16px; text-align:left;">Student Name</th>
+                <th style="padding:12px 16px; text-align:left;">University ID</th>
+                <th style="padding:12px 16px; text-align:left;">Score / 30</th>
+                <th style="padding:12px 16px; text-align:left;">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in results_list %}
+            <tr style="border-bottom:1px solid #e2e8f0;">
+                <td style="padding:12px 16px;">{{ loop.index }}</td>
+                <td style="padding:12px 16px; font-size:0.85em; color:#718096;">{{ r.filename }}</td>
+                <td style="padding:12px 16px;">{{ r.name }}</td>
+                <td style="padding:12px 16px;">
+                    <span style="background:#e0eafc; color:var(--primary-blue); padding:4px 10px; border-radius:20px; font-size:0.8em; font-weight:600;">
+                        {{ r.code }}
+                    </span>
+                </td>
+                <td style="padding:12px 16px; font-weight:600;
+                    {% if r.score and r.score >= 20 %}color:#2e7d32;
+                    {% elif r.score and r.score >= 15 %}color:#e65100;
+                    {% elif r.score %}color:#c62828;{% endif %}">
+                    {{ r.score if r.score is not none else '—' }}
+                </td>
+                <td style="padding:12px 16px;">
+                    {% if r.status == 'success' %}
+                        <span style="background:#e8f5e9; color:#2e7d32; padding:4px 10px; border-radius:20px; font-size:0.8em; font-weight:600;">✓ Saved</span>
+                    {% elif r.status == 'warning' %}
+                        <span style="background:#fff3e0; color:#e65100; padding:4px 10px; border-radius:20px; font-size:0.8em; font-weight:600;">⚠ ID not detected</span>
+                    {% else %}
+                        <span style="background:#ffebee; color:#c62828; padding:4px 10px; border-radius:20px; font-size:0.8em; font-weight:600;">✕ Error</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div style="margin-top:16px; text-align:right;">
+        <a href="/results" style="color:var(--accent-blue); font-weight:600; text-decoration:none;">View full results →</a>
+    </div>
+</div>
+{% endif %}
+        </div>
+    </div>
+
+<script>
+    // Generate a unique session ID for this grading run
+    function makeId() {
+        return Math.random().toString(36).substr(2, 9);
+    }
+
+    function startGrading() {
+        const studentFiles = document.getElementsByName('student')[0].files.length;
+        const keyFile      = document.getElementsByName('key')[0].files.length;
+
+        if (studentFiles > 0 && keyFile > 0) {
+            const sessionId = makeId();
+            document.getElementById('session_id').value = sessionId;
+
+            // Show progress bar, hide form
+            document.getElementById('progressContainer').style.display = 'block';
+            document.getElementById('gradeForm').style.opacity         = '0.3';
+            document.getElementById('gradeForm').style.pointerEvents   = 'none';
+
+            // Start SSE progress listener
+            const evtSource = new EventSource(`/grading/progress/${sessionId}`);
+
+            evtSource.onmessage = function(e) {
+                const data = JSON.parse(e.data);
+
+                if (data.total) {
+                    const pct = Math.round((data.current / data.total) * 100);
+                    document.getElementById('progressFill').style.width     = pct + '%';
+                    document.getElementById('progressText').textContent      = `Grading ${data.current} of ${data.total} (${pct}%)`;
+                    document.getElementById('progressFilename').textContent  = `Processing: ${data.filename}`;
+                }
+
+                if (data.done) {
+                    document.getElementById('progressText').textContent     = 'All done! Loading results...';
+                    document.getElementById('progressFilename').textContent = '';
+                    evtSource.close();
+                }
+            };
+        }
+    }
+</script>
+</body>
+</html>

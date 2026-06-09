@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exams | Visionary Graders</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-blue: #003366;
+            --accent-blue: #007bff;
+            --hover-blue: #004a99;
+        }
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #e0eafc 0%, #cfdef3 100%);
+            margin: 0;
+            min-height: 100vh;
+        }
+        header {
+            background: white;
+            padding: 10px 50px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.1);
+        }
+        .logo-container { display: flex; align-items: center; gap: 15px; }
+        .logo-container img { height: 100px; }
+        .logout-btn {
+            background: #ff4d4d;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            transition: background 0.3s ease;
+        }
+        .logout-btn:hover { background: #cc0000; }
+        .nav-links { display: flex; gap: 15px; }
+        .nav-link {
+            color: var(--primary-blue);
+            text-decoration: none;
+            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+        .nav-link:hover { background: #e0eafc; }
+        .nav-link.active { background: var(--primary-blue); color: white; }
+        .main-content {
+            padding: 60px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 30px;
+        }
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background: rgba(255,255,255,0.95);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+        }
+        h1 { color: var(--primary-blue); margin-top: 0; }
+        .add-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: 15px;
+            align-items: end;
+            margin-bottom: 40px;
+        }
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-group label {
+            font-size: 0.85em;
+            font-weight: 600;
+            color: var(--primary-blue);
+        }
+        .form-group input {
+            padding: 10px 14px;
+            border: 2px solid #cbd5e0;
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.9em;
+            transition: border-color 0.3s;
+            outline: none;
+        }
+        .form-group input:focus { border-color: var(--accent-blue); }
+        .btn-add {
+            width: auto;
+            background: var(--primary-blue);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+            white-space: nowrap;
+            font-size: 0.9em;
+        }
+        .btn-add:hover { background: var(--hover-blue); transform: none; box-shadow: none; }
+        table { width: 100%; border-collapse: collapse; }
+        thead tr { background: var(--primary-blue); color: white; }
+        th, td { padding: 14px 18px; text-align: left; font-size: 0.9em; }
+        tbody tr { border-bottom: 1px solid #e2e8f0; transition: background 0.2s; }
+        tbody tr:hover { background: #f0f7ff; }
+        .badge {
+            background: #e0eafc;
+            color: var(--primary-blue);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+        .btn-grade {
+            width: auto;
+            background: var(--accent-blue);
+            color: white;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 600;
+            font-size: 0.82em;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.2s;
+            box-shadow: none;
+        }
+        .btn-grade:hover { background: #0056b3; transform: none; box-shadow: none; }
+        .btn-delete {
+            width: auto;
+            background: none;
+            border: none;
+            color: #ff4d4d;
+            cursor: pointer;
+            font-size: 0.85em;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 5px;
+            transition: background 0.2s;
+            box-shadow: none;
+        }
+        .btn-delete:hover { background: #ffe5e5; transform: none; box-shadow: none; }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #a0aec0;
+        }
+    </style>
+</head>
+<body>
+<header>
+    <div class="logo-container">
+        <img src="{{ url_for('static', filename='team_logo.png') }}" alt="Team">
+        <div class="team-info"><h2>Visionary Graders</h2></div>
+    </div>
+    <div style="display:flex; align-items:center; gap:30px;">
+       <nav class="nav-links">
+    <a href="/exams"    class="nav-link active" >Exams</a>
+<a href="/grading"  class="nav-link">Grading</a>
+<a href="/students" class="nav-link">Students</a>
+<a href="/results"  class="nav-link">Results</a>
+</nav>
+        <a href="/logout" class="logout-btn">Logout</a>
+    </div>
+</header>
+
+<div class="main-content">
+    <div class="container">
+        <h1>Exams</h1>
+
+        <form method="POST" class="add-form">
+            <div class="form-group">
+                <label>Subject</label>
+                <input type="text" name="subject" placeholder="e.g. Computer Architecture" required>
+            </div>
+            <div class="form-group">
+                <label>Exam Title</label>
+                <input type="text" name="title" placeholder="e.g. Midterm 2026" required>
+            </div>
+            <div class="form-group">
+                <label>Date</label>
+                <input type="date" name="exam_date" required>
+            </div>
+            <button type="submit" class="btn-add">+ Add Exam</button>
+        </form>
+
+        {% if exams %}
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Subject</th>
+                    <th>Title</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for exam in exams %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td><span class="badge">{{ exam.Subject }}</span></td>
+                    <td>{{ exam.Title }}</td>
+                    <td>{{ exam.ExamDate }}</td>
+                    <td style="display:flex; gap:8px;">
+                        <a href="/grading?exam_id={{ exam.ExamId }}" class="btn-grade">Grade</a>
+                        <a href="/exams/delete/{{ exam.ExamId }}">
+                            <button class="btn-delete">✕ Delete</button>
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <p>No exams yet. Create your first exam above.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+</body>
+</html>
