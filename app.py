@@ -173,108 +173,110 @@ def grading_progress_stream(session_id):
                     mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+# Create a dedicated function that runs in the background
+def background_grading_task(student_files_data, key_images, exam_id, session_id, total):
+    with app.app_context(): # Give the thread access to your SQLAlchemy database
+        results_list = []
+        
+        for idx, (student_filename, student_path) in enumerate(student_files_data):
+            grading_progress[session_id] = {
+                "current": idx + 1,
+                "total": total,
+                "filename": student_filename,
+                "done": False
+            }
+
+            try:
+                student_images = pdf_to_base64_images(student_path)
+                student_code, student_name = extract_student_info(student_images[0])
+                student_submissions = {student_filename: student_images}
+                result_text = grade_batch_exams(student_submissions, key_images)
+
+                score = None
+                match = re.search(r'FINAL SCALED SCORE:\s*([\d.]+)\s*/\s*30', result_text)
+                if match:
+                    score = float(match.group(1))
+
+                if student_code:
+                    student = Student.query.filter_by(StudentCode=str(student_code)).first()
+                    if not student:
+                        student = Student(
+                            FullName=student_name or "Unknown",
+                            StudentCode=str(student_code),
+                            Class="Unknown"
+                        )
+                        db.session.add(student)
+                        db.session.flush()
+
+                    grade_result = Result(
+                        ExamId=int(exam_id),
+                        StudentId=student.StudentId,
+                        Score=score,
+                        AIFeedback=result_text,
+                        GradedAt=datetime.utcnow()
+                    )
+                    db.session.add(grade_result)
+                    db.session.commit()
+
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error grading {student_filename}: {str(e)}")
+
+        # Mark the entire session as completely finished
+        grading_progress[session_id] = {
+            "current": total,
+            "total": total,
+            "filename": "Complete",
+            "done": True
+        }
+
 @app.route("/grading", methods=["GET", "POST"])
 def grading():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
 
-    all_exams        = Exam.query.order_by(Exam.ExamDate.desc()).all()
+    all_exams = Exam.query.order_by(Exam.ExamDate.desc()).all()
     selected_exam_id = request.args.get("exam_id", type=int)
-    results_list     = []
 
     if request.method == "POST":
         student_files = request.files.getlist("student")
-        key_file      = request.files.get("key")
-        exam_id       = request.form.get("exam_id")
-        session_id    = request.form.get("session_id")
-        total         = len(student_files)
+        key_file = request.files.get("key")
+        exam_id = request.form.get("exam_id")
+        session_id = request.form.get("session_id") or str(uuid.uuid4())
+        total = len(student_files)
 
         if student_files and key_file and exam_id:
+            # 1. Save and process the single key file immediately
             key_path = os.path.join(UPLOAD_FOLDER, secure_filename(key_file.filename))
             key_file.save(key_path)
             key_images = pdf_to_base64_images(key_path)
 
-            for idx, student_file in enumerate(student_files):
+            # 2. Save the student files to disk quickly so the thread can find them
+            student_files_data = []
+            for student_file in student_files:
                 student_filename = secure_filename(student_file.filename)
-
-                grading_progress[session_id] = {
-                    "current":  idx + 1,
-                    "total":    total,
-                    "filename": student_filename,
-                    "done":     False
-                }
-
                 student_path = os.path.join(UPLOAD_FOLDER, student_filename)
                 student_file.save(student_path)
+                student_files_data.append((student_filename, student_path))
 
-                try:
-                    student_images = pdf_to_base64_images(student_path)
-                    student_code, student_name = extract_student_info(student_images[0])
-                    student_submissions = {student_filename: student_images}
-                    result_text = grade_batch_exams(student_submissions, key_images)
-
-                    score = None
-                    match = re.search(r'FINAL SCALED SCORE:\s*([\d.]+)\s*/\s*30', result_text)
-                    if match:
-                        score = float(match.group(1))
-
-                    if student_code:
-                        student = Student.query.filter_by(StudentCode=str(student_code)).first()
-                        if not student:
-                            student = Student(
-                                FullName=student_name or "Unknown",
-                                StudentCode=str(student_code),
-                                Class="Unknown"
-                            )
-                            db.session.add(student)
-                            db.session.flush()
-
-                        grade_result = Result(
-                            ExamId=int(exam_id),
-                            StudentId=student.StudentId,
-                            Score=score,
-                            AIFeedback=result_text,
-                            GradedAt=datetime.utcnow()
-                        )
-                        db.session.add(grade_result)
-                        db.session.commit()
-
-                        results_list.append({
-                            "filename": student_filename,
-                            "name":     student.FullName,
-                            "code":     student.StudentCode,
-                            "score":    score,
-                            "status":   "success"
-                        })
-                    else:
-                        results_list.append({
-                            "filename": student_filename,
-                            "name":     "Unknown",
-                            "code":     "Not detected",
-                            "score":    score,
-                            "status":   "warning"
-                        })
-
-                except Exception as e:
-                    db.session.rollback()
-                    results_list.append({
-                        "filename": student_filename,
-                        "name":     "—",
-                        "code":     "—",
-                        "score":    None,
-                        "status":   "error",
-                        "error":    str(e)
-                    })
-
+            # Initialize progress tracking state
             grading_progress[session_id] = {
-                "current":  total,
-                "total":    total,
-                "filename": "Complete",
-                "done":     True
+                "current": 0,
+                "total": total,
+                "filename": "Initializing...",
+                "done": False
             }
 
-    return render_template("grading.html", results_list=results_list,
-                           exams=all_exams, selected_exam_id=selected_exam_id)
+            # 3. KICK OFF THE WORK IN THE BACKGROUND!
+            threading.Thread(
+                target=background_grading_task, 
+                args=(student_files_data, key_images, exam_id, session_id, total)
+            ).start()
+
+            # 4. Return immediately! Render a loading template that listens to the progress stream
+            return render_template("loading.html", session_id=session_id, exam_id=exam_id)
+
+    return render_template("grading.html", results_list=[], exams=all_exams, selected_exam_id=selected_exam_id)
 
 @app.route("/logout")
 def logout():
