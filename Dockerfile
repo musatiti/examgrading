@@ -15,9 +15,9 @@ RUN apt-get update && apt-get install -y \
     unixodbc-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Add Microsoft's repository and install the ODBC Driver 17
-RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
-    && curl https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list \
+# 2. Add Microsoft's repository and install the ODBC Driver 17 (Modernized)
+RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc -o /etc/apt/trusted.gpg.d/microsoft.asc \
+    && curl -fsSL https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     && ACCEPT_EULA=Y apt-get install -y msodbcsql17 \
     && rm -rf /var/lib/apt/lists/*
