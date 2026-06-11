@@ -32,6 +32,7 @@ jobs:
       - name: Run Pytest
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TESTING: 'True' # <-- THIS IS THE FIX! Tells app to use SQLite
         run: pytest -v --disable-warnings
 
       - name: Run Security Scan
