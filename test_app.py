@@ -17,7 +17,7 @@ def client():
             
             # Ensure the admin user exists for our tests
             if not User.query.filter_by(Username='admin').first():
-                new_admin = User(Username='admin', Password='just123')
+                new_admin = User(Username='admin', Password='just123')  # nosec B106
                 db.session.add(new_admin)
                 db.session.commit()
                 
