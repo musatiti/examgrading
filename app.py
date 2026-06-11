@@ -26,8 +26,10 @@ params = urllib.parse.quote_plus(
     f'DRIVER={{ODBC Driver 17 for SQL Server}};'
     f'SERVER={SERVER_NAME};'
     f'DATABASE={DATABASE_NAME};'
-    f'Trusted_Connection=yes;'
+    f'UID=sa;'
+    f'PWD=mypass123;'
 )
+
 
 # Check if we are running in a test environment (like GitHub Actions)
 if os.environ.get('TESTING') == 'True':
