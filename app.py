@@ -31,10 +31,11 @@ params = urllib.parse.quote_plus(
 # Check if we are running in a test environment (like GitHub Actions)
 if os.environ.get('TESTING') == 'True':
     app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:///:memory:" # Fast, temporary, built-in DB
+    print("Using in-memory SQLite for testing...")
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = f"mssql+pyodbc:///?odbc_connect={params}"
+    print("Using SQL Server...")
 
-app.config['SQLALCHEMY_DATABASE_URI'] = f"mssql+pyodbc:///?odbc_connect={params}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
