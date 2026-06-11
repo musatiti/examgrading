@@ -8,3 +8,4 @@ pytesseract
 PyMuPDF
 google-generativeai>=0.5.0
 flask-sqlalchemy
+pyodbc
