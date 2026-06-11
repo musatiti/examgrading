@@ -18,8 +18,8 @@ import time
 app = Flask(__name__)
 app.secret_key = 'just_secret_key_2026'
 
-SERVER_NAME = r'DESKTOP-QRPPRUD' 
-DATABASE_NAME = 'visiongrader'
+SERVER_NAME = r'localhost\SQLEXPRESS' 
+DATABASE_NAME = 'visiongraders'
 
 params = urllib.parse.quote_plus(
     f'DRIVER={{ODBC Driver 17 for SQL Server}};'
