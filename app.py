@@ -16,7 +16,8 @@ import time as time_module
 import time
 
 app = Flask(__name__)
-app.secret_key = 'just_secret_key_2026'
+# Use environment variable, fallback to random secure bytes
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
 
 SERVER_NAME = r'host.docker.internal\SQLEXPRESS'
 DATABASE_NAME = 'visiongraders'
@@ -74,7 +75,8 @@ with app.app_context():
     db.create_all() 
     admin_user = User.query.filter_by(Username='admin').first()
     if not admin_user:
-        new_admin = User(Username='admin', Password='just123')
+        admin_pw = os.environ.get('ADMIN_PASSWORD', 'SecureDefault123!')
+        new_admin = User(Username='admin', Password=admin_pw)
         db.session.add(new_admin)
         db.session.commit()
         print("Successfully created the users table and added the admin account!")
@@ -356,4 +358,5 @@ def view_result(result_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    is_debug = os.environ.get('FLASK_DEBUG') == 'True'
+    app.run(debug=is_debug)
