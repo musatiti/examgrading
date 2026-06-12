@@ -16,7 +16,7 @@ import time as time_module
 import time
 
 app = Flask(__name__)
-# Use environment variable, fallback to random secure bytes
+
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
 
 SERVER_NAME = r'host.docker.internal\SQLEXPRESS'
@@ -31,7 +31,6 @@ params = urllib.parse.quote_plus(
 )
 
 
-# Check if we are running in a test environment (like GitHub Actions)
 if os.environ.get('TESTING') == 'True':
     app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:///:memory:" # Fast, temporary, built-in DB
     print("Using in-memory SQLite for testing...")
@@ -173,9 +172,8 @@ def grading_progress_stream(session_id):
                     mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
-# Create a dedicated function that runs in the background
 def background_grading_task(student_files_data, key_images, exam_id, session_id, total):
-    with app.app_context(): # Give the thread access to your SQLAlchemy database
+    with app.app_context(): 
         results_list = []
         
         for idx, (student_filename, student_path) in enumerate(student_files_data):
@@ -222,7 +220,7 @@ def background_grading_task(student_files_data, key_images, exam_id, session_id,
                 db.session.rollback()
                 print(f"Error grading {student_filename}: {str(e)}")
 
-        # Mark the entire session as completely finished
+        
         grading_progress[session_id] = {
             "current": total,
             "total": total,
@@ -246,12 +244,12 @@ def grading():
         total = len(student_files)
 
         if student_files and key_file and exam_id:
-            # 1. Save and process the single key file immediately
+            
             key_path = os.path.join(UPLOAD_FOLDER, secure_filename(key_file.filename))
             key_file.save(key_path)
             key_images = pdf_to_base64_images(key_path)
 
-            # 2. Save the student files to disk quickly so the thread can find them
+            
             student_files_data = []
             for student_file in student_files:
                 student_filename = secure_filename(student_file.filename)
@@ -259,7 +257,7 @@ def grading():
                 student_file.save(student_path)
                 student_files_data.append((student_filename, student_path))
 
-            # Initialize progress tracking state
+            
             grading_progress[session_id] = {
                 "current": 0,
                 "total": total,
@@ -267,7 +265,7 @@ def grading():
                 "done": False
             }
 
-            # 3. KICK OFF THE WORK IN THE BACKGROUND!
+            
             threading.Thread(
                 target=background_grading_task, 
                 args=(student_files_data, key_images, exam_id, session_id, total)
