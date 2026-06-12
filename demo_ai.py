@@ -26,7 +26,7 @@ def grade_batch_exams(student_submissions, key_images):
     model_id = "gpt-4o"
     max_retries = 3
 
-    # التعليمات الموجهة للذكاء الاصطناعي
+    
     grading_prompt = """You are a grading engine. Your only goal is 100% deterministic visual transcription and logic comparison. 
     
     I am providing you with exactly two images:
@@ -139,7 +139,7 @@ def grade_batch_exams(student_submissions, key_images):
                     student_report += f"API ERROR DURING GRADING FOR {student_name} PAGE {page_num}:\n{str(e)}\n\n"
                     break 
         
-        # العلامة من 30
+       
         if student_raw_possible > 0:
             final_scaled_score = (student_raw_earned / student_raw_possible) * 30
         else:
@@ -162,8 +162,7 @@ def grade_batch_exams(student_submissions, key_images):
 
 def extract_student_info(student_image_b64):
     """Reads student ID and name from the first page of the exam."""
-    
-    # 2. FETCH THE TOKEN HERE AS WELL
+
     GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
     if not GITHUB_TOKEN:
         print("API ERROR: GITHUB_TOKEN environment variable not found.")
