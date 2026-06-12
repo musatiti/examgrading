@@ -12,7 +12,7 @@ def grade_batch_exams(student_submissions, key_images):
     - key_images: A list of base64 images for the Answer Key
     """
     
-    # 1. FETCH THE TOKEN
+
     GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
     if not GITHUB_TOKEN:
         return "API ERROR: GITHUB_TOKEN environment variable not found."
